@@ -1,0 +1,19 @@
+# محیط و کلیدها — هرگز کامیت نشوند
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# بک‌آپ‌ها
+*.dump
+*.sql.gz
+backup-*.json
+
+# سیستمی
+.DS_Store
+Thumbs.db
+node_modules/
+.vscode/
+.idea/
+*.log
