@@ -7,7 +7,10 @@
 <link rel="icon" id="favicon" href="data:,">
 <meta name="theme-color" content="#0B0F1A">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+/* فونت اصلی سامانه «دانا» است و در انتهای فایل بارگذاری می‌شود.
+   (پیش‌تر اینجا Google Fonts وارد می‌شد؛ چون قانون سراسری فونت
+   با !important روی همه‌ی عناصر اعمال می‌شود هیچ اثری نداشت و
+   فقط بارگذاری صفحه را روی سرورهای بدون دسترسی به آن، کند می‌کرد.) */
 
 :root{
   --bg:#0B0F1A; --bg2:#121826; --bg3:#1A2234; --bg4:#232D44;
@@ -2145,17 +2148,58 @@ th.sortable.asc .sarrow,th.sortable.desc .sarrow{opacity:1;color:var(--green);}
   </div>
 </div>
 
+<!-- ============================================================
+     فونت‌ها و کتابخانه‌ها
+     ترتیب: ابتدا نسخه‌ی محلی (پوشه‌ی vendor)، در صورت نبود ← CDN
+     این کار باعث می‌شود سامانه روی سرورهایی که به CDN دسترسی
+     ندارند (مثلاً میزبان داخلی) هم بدون مشکل بالا بیاید.
+     اگر فقط index.html را آپلود کنید، خودکار از CDN می‌خواند.
+     ============================================================ -->
 <link href="https://db.onlinewebfonts.com/c/7b42849df32f871192f0d01d3fc45b1a?family=dana" rel="stylesheet">
-<style>*{font-family:'dana',Tahoma,sans-serif !important;}</style>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+/* فونت پشتیبان محلی — اگر «دانا» در دسترس نبود جای Tahoma می‌نشیند */
+@font-face{font-family:'Vazirmatn';src:url('vendor/fonts/Vazirmatn.woff2') format('woff2-variations'),url('vendor/fonts/Vazirmatn.woff2') format('woff2');font-weight:100 900;font-display:swap;}
+*{font-family:'dana','Vazirmatn',Tahoma,sans-serif !important;}
+</style>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script>window.XLSX||document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/scr'+'ipt>');</script>
+
+<script src="vendor/chart.umd.js"></script>
+<script>window.Chart||document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/chart.js@4"><\/scr'+'ipt>');</script>
+
+<script src="vendor/supabase.min.js"></script>
+<script>window.supabase||document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"><\/scr'+'ipt>');</script>
 <script>
 // ============================================================
 // SUPABASE CONFIG
 // ============================================================
 const SUPABASE_URL = 'https://duriybbjwnjyeyoirgpa.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1cml5YmJqd25qeWV5b2lyZ3BhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0OTQxMzgsImV4cCI6MjA5OTA3MDEzOH0.eGPpkMRH0pg1Cw4-_UG08mskPazrDfMW8Dk4X6MjFRU';
+
+// اگر هیچ‌کدام از منابع (محلی/CDN) لود نشده باشد، به‌جای صفحه‌ی سفید
+// یک پیام قابل فهم نشان می‌دهیم تا عیب‌یابی روی هاست ساده باشد.
+(function(){
+  var miss = [];
+  if(!window.supabase) miss.push('supabase-js');
+  if(!window.Chart)    miss.push('Chart.js');
+  if(!window.XLSX)     miss.push('SheetJS');
+  if(!miss.length) return;
+  document.addEventListener('DOMContentLoaded',function(){
+    var d=document.createElement('div');
+    d.setAttribute('style','position:fixed;inset:0;z-index:99999;display:flex;align-items:center;'+
+      'justify-content:center;background:#0B1220;color:#E6EDF6;font:14px Tahoma,sans-serif;padding:24px;');
+    d.innerHTML='<div style="max-width:520px;text-align:center;line-height:2.1">'+
+      '<div style="font-size:44px;margin-bottom:10px">⚠️</div>'+
+      '<div style="font-size:17px;font-weight:700;margin-bottom:12px">کتابخانه‌های مورد نیاز بارگذاری نشد</div>'+
+      '<div style="color:#9FB0C6">موارد ناموجود: <b>'+miss.join('، ')+'</b></div>'+
+      '<div style="color:#9FB0C6;margin-top:12px">پوشه‌ی <code>vendor/</code> را کنار '+
+      '<code>index.html</code> روی هاست آپلود کنید، یا دسترسی سرور به اینترنت را بررسی نمایید.</div></div>';
+    document.body.appendChild(d);
+  });
+  throw new Error('Required libraries missing: '+miss.join(', '));
+})();
+
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 </script>
 <script>

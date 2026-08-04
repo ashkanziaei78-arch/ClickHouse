@@ -46,6 +46,11 @@
 ```
 .
 ├── index.html                          سامانه‌ی ERP (کل رابط کاربری)
+├── vendor/                             کتابخانه‌های محلی (بدون نیاز به اینترنت)
+│   ├── chart.umd.js                    Chart.js 4.5
+│   ├── xlsx.full.min.js                SheetJS (ورود/خروج اکسل)
+│   ├── supabase.min.js                 supabase-js 2
+│   └── fonts/Vazirmatn.woff2           فونت پشتیبان فارسی
 ├── docs/
 │   ├── DEPLOYMENT.md                   راه‌اندازی روی هاست و دامنه
 │   ├── DATABASE.md                     ساختار دیتابیس، RLS و توابع
@@ -127,7 +132,12 @@
    const SUPABASE_URL = 'https://<project-ref>.supabase.co';
    const SUPABASE_ANON_KEY = '<anon-key>';
    ```
-۴. `index.html` را روی هاست آپلود کنید ← [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+۴. `index.html` را **به‌همراه پوشه‌ی `vendor/`** روی هاست آپلود کنید ← [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+
+> **چرا پوشه‌ی `vendor/`؟** کتابخانه‌ها ابتدا از روی خودِ سرور خوانده می‌شوند و اگر
+> نبودند به‌صورت خودکار از CDN گرفته می‌شوند. یعنی روی سرورهایی که دسترسی به
+> CDN ندارند هم سامانه کامل بالا می‌آید. اگر فقط `index.html` را آپلود کنید، باز
+> هم کار می‌کند — به شرط آنکه مرورگر کاربران به `cdn.jsdelivr.net` دسترسی داشته باشد.
 
 > **کلید `anon` عمومی است و مشکل امنیتی ندارد** — تمام کنترل دسترسی در دیتابیس با RLS انجام می‌شود. کلید `service_role` هرگز نباید در این فایل قرار گیرد.
 
