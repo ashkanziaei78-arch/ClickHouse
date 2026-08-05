@@ -159,6 +159,13 @@ CREATE POLICY <t>_delete ON public.<table> FOR DELETE
 
 ---
 
+## نصب روی یک Postgres/Supabase تازه (بدون داده)
+
+فایل آماده‌ی `supabase/migrations/0001_full_schema.sql` کل این ساختار
+را می‌سازد — همه‌ی جدول‌ها، RLS، توابع، تریگرها — بدون هیچ داده‌ی
+کسب‌وکاری. برای اجرای مرحله‌به‌مرحله به
+[`supabase/migrations/README.md`](../supabase/migrations/README.md) مراجعه کن.
+
 ## گرفتن خروجی از ساختار فعلی
 
 ```bash
