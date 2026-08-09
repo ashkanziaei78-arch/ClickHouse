@@ -1,0 +1,51 @@
+name: Deploy ERP to GitHub Pages
+
+on:
+  push:
+    branches: [claude/scan-gm4wv2]
+    paths:
+      - 'index.html'
+      - 'vendor/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      # فقط سامانه‌ی ERP (index.html + vendor) منتشر می‌شود؛
+      # docs/ و supabase/ (کد سرور و مستندات) در سایت منتشرشده نمی‌آیند.
+      - name: Prepare deployable site
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          cp -r vendor _site/vendor
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
