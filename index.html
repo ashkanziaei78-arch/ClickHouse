@@ -829,8 +829,10 @@ th.sortable.asc .sarrow,th.sortable.desc .sarrow{opacity:1;color:var(--green);}
         </div>
         <div class="field" style="margin-bottom:12px"><label>یادداشت</label><textarea id="dr-note" rows="2"></textarea></div>
         <button class="btn btn-ghost" onclick="copyLastDailyReport()">📋 کپی از گزارش قبلی</button>
-        <button class="btn btn-green" onclick="saveDailyReport()">💾 ذخیره گزارش</button>
+        <button class="btn btn-blue" onclick="addDrBatchRow()">➕ افزودن به لیست (شیفت بعدی)</button>
+        <button class="btn btn-green" onclick="saveDailyReport()">💾 ذخیره همین یک گزارش</button>
       </div>
+      <div id="drBatchBar"></div>
     </div>
     <div class="card" style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div><b>📥 ورود گروهی از اکسل</b><div style="font-size:12px;color:var(--muted);margin-top:4px">ورود اکسل همه فرم‌ها یکجا در صفحه «ورود اکسل» انجام می‌شود.</div></div>
@@ -1356,6 +1358,108 @@ th.sortable.asc .sarrow,th.sortable.desc .sarrow{opacity:1;color:var(--green);}
         <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:13px"><span>قیمت پایه:</span><span class="mono" id="bomBasePrice">0</span></div>
         <div style="display:flex;justify-content:space-between;font-size:13px"><span>با خطا:</span><span class="mono" id="bomWithError">0</span></div>
       </div>
+    </div>
+  </div>
+
+  <!-- PLANNING: ENVELOPE BOM (BOM پاکت) -->
+  <div class="page" id="page-envelopebom">
+    <div class="page-title">✉️ BOM پاکت</div>
+    <div class="page-desc">قیمت تمام‌شده هر پاکت — کاغذ، ضایعات، دکمه، نخ، بسته‌بندی، چاپ و سربار</div>
+    <div class="bom-layout">
+      <div>
+        <div class="card accent" style="margin-bottom:16px">
+          <div class="form-row">
+            <div class="field"><label>نوع/نام پاکت</label><input type="text" id="eb-name" placeholder="مثلاً A4" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>تاریخ ثبت</label><div class="jp-input-wrap"><input type="text" class="jp-field" id="ebDate-j" placeholder="انتخاب تاریخ"><span class="jp-cal-icon">📅</span></div><input type="hidden" id="ebDate"></div>
+          </div>
+          <div class="btn-row" id="eb-actions">
+            <button class="btn btn-green" onclick="calcEnvelopeBom()">⟳ محاسبه</button>
+            <button class="btn btn-ghost" onclick="saveEnvelopeBomToHistory()">📌 ثبت در تاریخچه</button>
+            <button class="btn btn-ghost" onclick="window.print()">🖨 چاپ</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title">📄 کاغذ <span class="badge badge-green" id="eb-paper-badge">0 ﷼</span></div>
+          <div class="form-row">
+            <div class="field"><label>طول (اختیاری)</label><input type="number" id="eb-length" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>عرض (اختیاری)</label><input type="number" id="eb-width" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>وزن کاغذ هر پاکت (kg)</label><input type="number" id="eb-paperweight" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>قیمت کاغذ (﷼ به ازای هر تن)</label><input type="number" id="eb-paperprice" oninput="calcEnvelopeBom()"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title">♻️ ضایعات و ملزومات <span class="badge badge-orange" id="eb-waste-badge">0 ﷼</span></div>
+          <div class="form-row">
+            <div class="field"><label>درصد ضایعات (%)</label><input type="number" id="eb-wastepct" placeholder="مثلاً 2" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>تعداد دکمه</label><input type="number" id="eb-buttoncount" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>قیمت هر دکمه (﷼)</label><input type="number" id="eb-buttonprice" oninput="calcEnvelopeBom()"></div>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>میزان نخ مصرفی (گرم)</label><input type="number" id="eb-threadqty" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>قیمت نخ (﷼ به ازای هر کیلو)</label><input type="number" id="eb-threadprice" oninput="calcEnvelopeBom()"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title">📦 بسته‌بندی <span class="badge badge-orange" id="eb-pack-badge">0 ﷼</span></div>
+          <div class="form-row">
+            <div class="field"><label>تعداد در کارتن</label><input type="number" id="eb-cartonqty" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>قیمت کارتن (﷼)</label><input type="number" id="eb-cartonprice" oninput="calcEnvelopeBom()"></div>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>میزان پلاستیک مصرفی (گرم)</label><input type="number" id="eb-plasticqty" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>قیمت پلاستیک (﷼ به ازای هر کیلو)</label><input type="number" id="eb-plasticprice" oninput="calcEnvelopeBom()"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title">🖨 چاپ <span class="badge badge-orange" id="eb-print-badge">0 ﷼</span></div>
+          <div class="form-row">
+            <div class="field"><label>هزینه چاپ (﷼)</label><input type="number" id="eb-printcost" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>دایکات (﷼)</label><input type="number" id="eb-diecut" oninput="calcEnvelopeBom()"></div>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>هزینه حمل (﷼)</label><input type="number" id="eb-transport" oninput="calcEnvelopeBom()"></div>
+            <div class="field"><label>بسته‌بندی چاپی (﷼)</label><input type="number" id="eb-printpack" oninput="calcEnvelopeBom()"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🔧 نگهداری، دستمزد، خطا و سود</div>
+          <div class="form-row">
+            <div class="field"><label>هزینه سالیانه نت (﷼)</label><input type="number" id="eb-maintcost" value="35000000" onchange="calcEnvelopeBom()"></div>
+            <div class="field"><label>تولید سالیانه (عدد)</label><input type="number" id="eb-maintprod" value="50000" onchange="calcEnvelopeBom()"></div>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>حقوق و دستمزد کل (﷼)</label><input type="number" id="eb-wagescost" value="1600000000" onchange="calcEnvelopeBom()"></div>
+            <div class="field"><label>تولید در بازه (عدد)</label><input type="number" id="eb-wagesprod" value="50000" onchange="calcEnvelopeBom()"></div>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>درصد خطا (%)</label><input type="number" id="eb-errorpct" value="5" onchange="calcEnvelopeBom()"></div>
+            <div class="field"><label>درصد سود (%)</label><input type="number" id="eb-marginpct" value="40" onchange="calcEnvelopeBom()"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bom-result">
+        <div class="card-title">نتیجه محاسبه</div>
+        <div id="eb-breakdown"></div>
+        <div class="bom-total" id="eb-finalprice">0 ﷼</div>
+        <div style="font-size:12px;color:var(--text2);text-align:center">قیمت نهایی هر پاکت با سود</div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:13px"><span>جمع قبل از خطا:</span><span class="mono" id="eb-subtotal">0</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span>با خطا:</span><span class="mono" id="eb-witherror">0</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span>سود:</span><span class="mono" id="eb-profit">0</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">تاریخچه BOM پاکت</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>تاریخ</th><th>نوع پاکت</th><th>قیمت نهایی</th></tr></thead>
+        <tbody id="eb-history-tbody"></tbody>
+      </table></div>
     </div>
   </div>
 
@@ -2305,7 +2409,7 @@ function jpPickToday(){const[y,m,d]=todayJalali();_jpState.y=y;_jpState.m=m;jpPi
 // STATE
 // ============================================================
 let db=null, lang='fa', theme='dark', currentUser=null, editingUserId=null, currentCalc='weight', calcPaperData=null, dimMode=2;
-let papers=[],formulas=[],packPresets=[],inventory=[],rawmats=[],suppliers=[],purchaseOrders=[],bomHistory=[],dailyReports=[],actLog=[],users=[],settings={},notifications=[],histLog=[],workflowTemplates=[],goodsRequests=[],grItems=[],letters=[],customForms=[],customFormRecords=[],activeCustomFormSlug=null,builderFields=[],builderSteps=[],approvals=[],formTemplates=[],sheeterReports=[],packReports=[],pkItems=[],editingPackagingId=null,orgRoles=[],wfEditorModule=null,wfEditorSteps=[],userSignatures=[],docSignatures=[];
+let papers=[],formulas=[],packPresets=[],inventory=[],rawmats=[],suppliers=[],purchaseOrders=[],bomHistory=[],dailyReports=[],actLog=[],users=[],settings={},notifications=[],histLog=[],workflowTemplates=[],goodsRequests=[],grItems=[],letters=[],customForms=[],customFormRecords=[],activeCustomFormSlug=null,builderFields=[],builderSteps=[],approvals=[],formTemplates=[],sheeterReports=[],packReports=[],pkItems=[],editingPackagingId=null,orgRoles=[],wfEditorModule=null,wfEditorSteps=[],userSignatures=[],docSignatures=[],drBatchQueue=[],envelopeBomHistory=[];
 let hrEmployees=[],hrContracts=[],hrShifts=[],hrAttendance=[],hrLeaves=[],hrPayrollItems=[],hrPayslips=[],editingHrEmpId=null,editingHrConId=null;
 let productionStops=[];
 let accAccounts=[],accVouchers=[],accVoucherLines=[],trAccounts=[],trChecks=[],trTransactions=[],salesOrders=[],salesDeliveries=[],invoices=[],customers=[];
@@ -2341,6 +2445,7 @@ const MODULES=[
   ]},
   {key:'planning',icon:'📅',label:'برنامه‌ریزی',items:[
     {page:'bom',icon:'💰',label:'محاسبه BOM'},
+    {page:'envelopebom',icon:'✉️',label:'BOM پاکت'},
     {page:'formulas',icon:'🧪',label:'فرمول مواد اولیه'},
     {page:'compare',icon:'⚖️',label:'مقایسه فرمول‌ها'},
     {page:'pricehist',icon:'💹',label:'تاریخچه قیمت'},
@@ -2813,7 +2918,7 @@ function showPage(pg){
   if(pg==='users')renderUsers();
   if(pg==='workflows')renderWorkflowsPage();
   if(pg==='actlog'){initJPicker('log-from-j','log-from');initJPicker('log-to-j','log-to');renderActLog();}
-  if(pg==='daily'){initJPicker('dr-filter-from-j','dr-filter-from');initJPicker('dr-filter-to-j','dr-filter-to');renderDailyReports();if(!document.getElementById('dr-date').value)jpSetToday('dr-jdate','dr-date');updateDrDay();}
+  if(pg==='daily'){initJPicker('dr-filter-from-j','dr-filter-from');initJPicker('dr-filter-to-j','dr-filter-to');renderDailyReports();if(!document.getElementById('dr-date').value)jpSetToday('dr-jdate','dr-date');updateDrDay();renderDrBatchBar();}
   if(pg==='sheeter'){initJPicker('sh-jdate','sh-date');initJPicker('sh-filter-from-j','sh-filter-from');initJPicker('sh-filter-to-j','sh-filter-to');if(!document.getElementById('sh-date').value)jpSetToday('sh-jdate','sh-date');renderSheeterReports();}
   if(pg==='inbox'){renderInbox();}
   if(pg==='letters'){renderLetters();}
@@ -2824,6 +2929,7 @@ function showPage(pg){
   if(pg==='reports'){if(!document.getElementById('rpt-date').value)jpSetToday('rpt-jdate','rpt-date');}
   if(pg==='newpaper'){if(!document.getElementById('np-isodate').value)jpSetToday('np-jdate','np-isodate');}
   if(pg==='bom'){refreshDropdowns();calcBom();}
+  if(pg==='envelopebom'){initJPicker('ebDate-j','ebDate');if(!document.getElementById('ebDate').value)jpSetToday('ebDate-j','ebDate');calcEnvelopeBom();renderEnvelopeBomHistory();}
   if(pg==='settings'){renderNightlyBackups();renderSignatureSettings();}
   if(pg==='excelimport')renderImportTargets();
   if(pg==='customers')renderCustomers();
@@ -4592,6 +4698,74 @@ function renderPriceHist(from,to){const tb=document.getElementById('priceHistTBo
 function drawPriceHistChart(data){const c=document.getElementById('priceHistChart');if(!c||data.length<2)return;const ctx=c.getContext('2d');c.width=c.parentElement.clientWidth||600;c.height=200;const prices=data.map(d=>d.finalPrice);const min=Math.min(...prices)*0.95;const max=Math.max(...prices)*1.05;ctx.clearRect(0,0,c.width,c.height);const pad=40;const w=c.width-2*pad;const h=c.height-2*pad;ctx.strokeStyle='rgba(255,255,255,.05)';for(let i=0;i<=4;i++){const y=pad+h*i/4;ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(pad+w,y);ctx.stroke();}ctx.strokeStyle='#10D970';ctx.lineWidth=2;ctx.beginPath();data.forEach((d,i)=>{const x=pad+w*i/(data.length-1);const y=pad+h*(1-(d.finalPrice-min)/(max-min||1));i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});ctx.stroke();data.forEach((d,i)=>{const x=pad+w*i/(data.length-1);const y=pad+h*(1-(d.finalPrice-min)/(max-min||1));ctx.beginPath();ctx.arc(x,y,4,0,2*Math.PI);ctx.fillStyle='#10D970';ctx.fill();});}
 
 // ============================================================
+// ENVELOPE BOM (BOM پاکت) — کاغذ + ضایعات/ملزومات + بسته‌بندی + چاپ + سربار
+// ذخیره در همان جدول bom_history با detail.kind='envelope' (بدون نیاز به جدول جدید)
+// ============================================================
+function ebNum(id){return parseFloat(document.getElementById(id)?.value)||0;}
+function calcEnvelopeBom(){
+  const paperWeight=ebNum('eb-paperweight'), paperPriceTon=ebNum('eb-paperprice');
+  const paperCost=paperWeight*paperPriceTon/1000;
+
+  const wastePct=ebNum('eb-wastepct');
+  const wasteCost=paperCost*wastePct/100;
+  const buttonCost=ebNum('eb-buttoncount')*ebNum('eb-buttonprice');
+  const threadCost=ebNum('eb-threadqty')*ebNum('eb-threadprice')/1000;
+
+  const cartonQty=ebNum('eb-cartonqty'), cartonPrice=ebNum('eb-cartonprice');
+  const cartonCost=cartonQty>0?cartonPrice/cartonQty:0;
+  const plasticCost=ebNum('eb-plasticqty')*ebNum('eb-plasticprice')/1000;
+
+  const printCost=ebNum('eb-printcost')+ebNum('eb-diecut')+ebNum('eb-transport')+ebNum('eb-printpack');
+
+  const maintProd=ebNum('eb-maintprod'); const maintCost=maintProd>0?ebNum('eb-maintcost')/maintProd:0;
+  const wagesProd=ebNum('eb-wagesprod'); const wagesCost=wagesProd>0?ebNum('eb-wagescost')/wagesProd:0;
+
+  const subtotal=paperCost+wasteCost+buttonCost+threadCost+cartonCost+plasticCost+printCost+maintCost+wagesCost;
+  const errorPct=ebNum('eb-errorpct');
+  const withError=subtotal*(1+errorPct/100);
+  const marginPct=ebNum('eb-marginpct');
+  // سود فقط روی بخش غیرکاغذ اعمال می‌شود (مطابق فایل اکسل اصلی)
+  const profit=(withError-paperCost)*marginPct/100;
+  const final=withError+profit;
+
+  const el=id=>document.getElementById(id);
+  if(el('eb-paper-badge'))el('eb-paper-badge').textContent=fmtNum(paperCost)+' ﷼';
+  if(el('eb-waste-badge'))el('eb-waste-badge').textContent=fmtNum(wasteCost+buttonCost+threadCost)+' ﷼';
+  if(el('eb-pack-badge'))el('eb-pack-badge').textContent=fmtNum(cartonCost+plasticCost)+' ﷼';
+  if(el('eb-print-badge'))el('eb-print-badge').textContent=fmtNum(printCost)+' ﷼';
+  if(el('eb-subtotal'))el('eb-subtotal').textContent=fmtNum(subtotal)+' ﷼';
+  if(el('eb-witherror'))el('eb-witherror').textContent=fmtNum(withError)+' ﷼';
+  if(el('eb-profit'))el('eb-profit').textContent=fmtNum(profit)+' ﷼';
+  if(el('eb-finalprice'))el('eb-finalprice').textContent=fmtNum(final)+' ﷼';
+
+  const bd=el('eb-breakdown');
+  if(bd)bd.innerHTML=[
+    {l:'کاغذ',v:paperCost,c:'#10D970'},{l:'ضایعات',v:wasteCost,c:'#FF8A3D'},
+    {l:'دکمه',v:buttonCost,c:'#3D8EFF'},{l:'نخ',v:threadCost,c:'#3D8EFF'},
+    {l:'کارتن',v:cartonCost,c:'#A855F7'},{l:'پلاستیک',v:plasticCost,c:'#A855F7'},
+    {l:'چاپ',v:printCost,c:'#EC4899'},{l:'نگهداری',v:maintCost,c:'#EC4899'},{l:'حقوق و دستمزد',v:wagesCost,c:'#EC4899'}
+  ].map(r=>`<div class="bom-row"><span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:${r.c}"></span>${r.l}</span><span class="mono" style="color:${r.c}">${fmtNum(r.v)}</span></div>`).join('');
+
+  return {name:el('eb-name')?.value||'—',paperCost,wasteCost,buttonCost,threadCost,cartonCost,plasticCost,printCost,maintCost,wagesCost,subtotal,errorPct,withError,marginPct,profit,final};
+}
+function saveEnvelopeBomToHistory(){
+  const r=calcEnvelopeBom();
+  if(!r.name||r.name==='—'){toast('نوع/نام پاکت را وارد کنید','warning');return;}
+  const bomDate=document.getElementById('ebDate')?.value||new Date().toISOString().slice(0,10);
+  const item={id:Date.now().toString(),name:'BOM پاکت '+isoToJalaliStr(bomDate)+' - '+r.name,finalPrice:r.final,bomDate,detail:{kind:'envelope',...r},createdBy:currentUser?.id||null};
+  bomHistory.unshift(item);
+  DataService.put('bomHistory',item).then(()=>{
+    renderEnvelopeBomHistory();logActivity('ثبت BOM پاکت ('+r.name+' - '+isoToJalaliStr(bomDate)+')','✉️');toast('ثبت شد و در تاریخچه ذخیره شد');
+  }).catch(()=>{bomHistory.shift();});
+}
+function renderEnvelopeBomHistory(){
+  const tb=document.getElementById('eb-history-tbody');if(!tb)return;
+  const list=bomHistory.filter(b=>b.detail?.kind==='envelope').sort((a,b)=>new Date(b.bomDate)-new Date(a.bomDate));
+  tb.innerHTML=list.length?list.map(b=>`<tr><td>${isoToJalaliStr(b.bomDate)}</td><td>${escapeHtml(b.detail?.name||'—')}</td><td class="mono">${fmtNum(b.finalPrice)} ﷼</td></tr>`).join('')
+    :'<tr><td colspan="3" class="empty">هنوز BOM پاکتی ثبت نشده</td></tr>';
+}
+
+// ============================================================
 // COMPARE
 // ============================================================
 function compareFormulas(){const ids=['cmp1','cmp2','cmp3'].map(id=>document.getElementById(id).value).filter(Boolean);if(ids.length<2){toast('حداقل ۲ فرمول','warning');return;}const results=ids.map(id=>{if(id==='default')return{name:'پیش‌فرض',cost:DEFAULT_RAW.reduce((s,m)=>s+m.ratio*m.price,0)};const f=formulas.find(x=>x.id===id);return f?{name:f.name,cost:f.materials.reduce((s,m)=>s+m.ratio*m.price,0)}:null;}).filter(Boolean);const minCost=Math.min(...results.map(r=>r.cost));document.getElementById('compareResult').innerHTML=`<div class="card"><div style="display:grid;grid-template-columns:repeat(${results.length},1fr);gap:12px">`+results.map(r=>`<div style="text-align:center;padding:16px;background:${r.cost===minCost?'var(--green-d)':'var(--bg3)'};border-radius:var(--radius-sm);border:1px solid ${r.cost===minCost?'var(--green)':'var(--border)'}"><div style="font-weight:600;margin-bottom:8px">${r.name}</div><div class="mono" style="font-size:20px;color:${r.cost===minCost?'var(--green)':'var(--text)'}">${fmtNum(r.cost)} ﷼</div>${r.cost===minCost?'<div style="color:var(--green);font-size:12px;margin-top:4px">✅ ارزان‌ترین</div>':'<div style="font-size:12px;color:var(--red);margin-top:4px">▲ '+fmtNum(r.cost-minCost)+'</div>'}</div>`).join('')+'</div></div>';}
@@ -4606,10 +4780,67 @@ function updateDrDay(){
   const days=['یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه','شنبه'];
   el.value=days[new Date(dateVal+'T00:00:00').getDay()];
 }
+function drReadFieldVals(){
+  return {date:document.getElementById('dr-date').value,production:parseFloat(document.getElementById('dr-prod').value)||0,waste:parseFloat(document.getElementById('dr-waste').value)||0,line:document.getElementById('dr-line').value||null,shift:document.getElementById('dr-shift').value,operator:document.getElementById('dr-op').value,note:document.getElementById('dr-note').value,formulaId:document.getElementById('dr-formula').value||null,dayName:document.getElementById('dr-day').value,rowNumber:document.getElementById('dr-number').value,rollCode:document.getElementById('dr-roll').value,meterage:parseFloat(document.getElementById('dr-meterage').value)||0,widthCm:parseFloat(document.getElementById('dr-width').value)||0,bladeSpec:document.getElementById('dr-blade').value,materialTemp:parseFloat(document.getElementById('dr-temp').value)||0,motorLoadPct:parseFloat(document.getElementById('dr-motor').value)||0};
+}
+// فقط فیلدهای مخصوص هر شیفت را پاک می‌کند؛ تاریخ (و روز) برای شیفت بعدی همان روز باقی می‌ماند
+function drClearRowInputs(){
+  ['dr-prod','dr-waste','dr-op','dr-note','dr-formula','dr-number','dr-roll','dr-meterage','dr-width','dr-blade','dr-temp','dr-motor'].forEach(id=>document.getElementById(id).value='');
+}
+// ---- ثبت گروهی چند شیفت با هم (صبح/عصر/شب) ----
+function addDrBatchRow(){
+  const v=drReadFieldVals();
+  if(!v.date){toast('تاریخ را انتخاب کنید','warning');return;}
+  drBatchQueue.push(v);
+  drClearRowInputs();
+  renderDrBatchBar();
+  toast('به لیست اضافه شد ('+drBatchQueue.length+') — شیفت بعدی را وارد کن');
+}
+function removeDrBatchRow(i){drBatchQueue.splice(i,1);renderDrBatchBar();}
+function renderDrBatchBar(){
+  const host=document.getElementById('drBatchBar');if(!host)return;
+  if(!drBatchQueue.length){host.innerHTML='';return;}
+  const rows=drBatchQueue.map((q,i)=>`<tr>
+    <td class="mono">${i+1}</td>
+    <td>${escapeHtml(isoToJalaliStr(q.date))}</td>
+    <td>${escapeHtml(q.shift||'—')}</td>
+    <td>${escapeHtml(q.line||'—')}</td>
+    <td class="mono">${fmtNum(q.production)}</td>
+    <td class="mono">${fmtNum(q.waste)}</td>
+    <td>${escapeHtml(q.operator||'—')}</td>
+    <td class="act-col"><button class="btn btn-red btn-sm" onclick="removeDrBatchRow(${i})">🗑</button></td>
+  </tr>`).join('');
+  host.innerHTML=`<div class="card" style="margin-top:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div class="card-title" style="margin:0">📋 لیست شیفت‌های آماده ارسال <span class="badge badge-green">${drBatchQueue.length}</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-green btn-sm" onclick="submitDrBatch()">📤 ثبت و ارسال همه (${drBatchQueue.length})</button>
+        <button class="btn btn-ghost btn-sm" onclick="drBatchQueue=[];renderDrBatchBar()">🧹 خالی کردن</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>#</th><th>تاریخ</th><th>شیفت</th><th>خط</th><th>تولید</th><th>ضایعات</th><th>اپراتور</th><th class="act-col"></th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+async function submitDrBatch(){
+  if(!drBatchQueue.length)return;
+  const steps=getWorkflowSteps('daily_reports');
+  let n=0;
+  for(const v of drBatchQueue){
+    const r={id:Date.now().toString()+Math.random().toString(36).slice(2,6),...v,createdAt:new Date().toISOString(),status:steps.length?'submitted':'approved',currentStep:steps.length?steps[0].stepOrder:0,submittedBy:currentUser?.id||null,rejectionNote:null};
+    try{await DataService.put('dailyReports',r);}catch(e){toast('خطا در ذخیره شیفت '+(n+1),'error');break;}
+    dailyReports.push(r);n++;
+  }
+  if(!n)return;
+  drBatchQueue.splice(0,n);
+  logActivity('گزارش تولید ارسال شد ('+n+' شیفت)','📈');
+  addNotif('گزارش تولید ('+n+' شیفت) برای تایید ارسال شد','green','daily');
+  toast(steps.length?(n+' شیفت ثبت و برای تایید ارسال شد ✓'):(n+' شیفت ذخیره شد'));
+  renderDrBatchBar();renderDailyReports();updateDash();
+}
 async function saveDailyReport(){
   const date=document.getElementById('dr-date').value;
   if(!date){toast('تاریخ را انتخاب کنید','warning');return;}
-  const fieldVals={date,production:parseFloat(document.getElementById('dr-prod').value)||0,waste:parseFloat(document.getElementById('dr-waste').value)||0,line:document.getElementById('dr-line').value||null,shift:document.getElementById('dr-shift').value,operator:document.getElementById('dr-op').value,note:document.getElementById('dr-note').value,formulaId:document.getElementById('dr-formula').value||null,dayName:document.getElementById('dr-day').value,rowNumber:document.getElementById('dr-number').value,rollCode:document.getElementById('dr-roll').value,meterage:parseFloat(document.getElementById('dr-meterage').value)||0,widthCm:parseFloat(document.getElementById('dr-width').value)||0,bladeSpec:document.getElementById('dr-blade').value,materialTemp:parseFloat(document.getElementById('dr-temp').value)||0,motorLoadPct:parseFloat(document.getElementById('dr-motor').value)||0};
+  const fieldVals=drReadFieldVals();
 
   if(editingDailyReportId){
     const idx=dailyReports.findIndex(x=>x.id===editingDailyReportId);
@@ -4623,7 +4854,7 @@ async function saveDailyReport(){
       toast('گزارش ویرایش شد');
       editingDailyReportId=null;
       renderDailyReports();updateDash();
-      ['dr-prod','dr-waste','dr-op','dr-note','dr-formula','dr-number','dr-roll','dr-meterage','dr-width','dr-blade','dr-temp','dr-motor'].forEach(id=>document.getElementById(id).value='');
+      drClearRowInputs();
       return;
     }
   }
@@ -4636,7 +4867,7 @@ async function saveDailyReport(){
   addNotif(`گزارش تولید ${isoToJalaliStr(date)} ارسال شد برای تایید`,'green','daily');
   toast(steps.length?'ثبت شد و برای تایید ارسال شد':'ذخیره شد');
   renderDailyReports();updateDash();
-  ['dr-prod','dr-waste','dr-op','dr-note','dr-formula','dr-number','dr-roll','dr-meterage','dr-width','dr-blade','dr-temp','dr-motor'].forEach(id=>document.getElementById(id).value='');
+  drClearRowInputs();
 }
 
 // ============================================================
