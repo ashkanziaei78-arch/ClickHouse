@@ -456,6 +456,16 @@ th.sortable.asc .sarrow,th.sortable.desc .sarrow{opacity:1;color:var(--green);}
     <div class="cmdk-hint"><span><kbd>↑</kbd> <kbd>↓</kbd> حرکت</span><span><kbd>Enter</kbd> باز کردن</span><span><kbd>Esc</kbd> بستن</span></div>
   </div>
 </div>
+<div class="modal-bg" id="confirmModal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title"><span id="confirmModalTitle">تایید</span><button class="modal-close" onclick="closeConfirmModal(false)">×</button></div>
+    <div id="confirmModalBody" style="font-size:14px;color:var(--text2);line-height:1.9;margin:6px 0 4px"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeConfirmModal(false)">انصراف</button>
+      <button class="btn btn-green" onclick="closeConfirmModal(true)">بله، تایید کن</button>
+    </div>
+  </div>
+</div>
 <div class="modal-bg" id="textPromptModal">
   <div class="modal" style="max-width:440px">
     <div class="modal-title"><span id="textPromptTitle">ورود متن</span><button class="modal-close" onclick="closeTextPrompt(null)">×</button></div>
@@ -1137,7 +1147,10 @@ th.sortable.asc .sarrow,th.sortable.desc .sarrow{opacity:1;color:var(--green);}
 
   <!-- MY INBOX -->
   <div class="page" id="page-inbox">
-    <div class="page-title">🗂 کارتابل من</div>
+    <div class="page-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <span>🗂 کارتابل من</span>
+      <button class="btn btn-green btn-sm" id="inboxApproveAllBtn" onclick="bulkApproveInbox()">✅ تایید همه</button>
+    </div>
     <div class="page-desc">فرم‌ها و درخواست‌هایی که منتظر تصمیم شما هستند</div>
     <div id="inboxList"></div>
   </div>
@@ -5156,6 +5169,49 @@ function renderInbox(){
       </div>
     </div>`;
   }).join('');
+  const allBtn=document.getElementById('inboxApproveAllBtn');
+  if(allBtn)allBtn.style.display=items.length?'inline-flex':'none';
+}
+// نسخه‌ی async از dispatcher تایید — برخلاف inboxApprove، Promise واقعی هر تایید را
+// برمی‌گرداند تا در تایید گروهی بشود منتظر هرکدام ماند و ردیف بعدی را بعد از تمام شدنش زد
+function inboxApproveAsync(type,id){
+  if(type==='daily')return approveDaily(id);
+  if(type==='sheeter')return approveSheeter(id);
+  if(type==='gr_wh')return approveGrWarehouse(id);
+  if(type==='gr_recv')return confirmGrReceipt(id);
+  if(type==='letter')return acknowledgeLetter(id);
+  if(type==='hrleave')return approveHrLeave(id);
+  if(type==='custom')return approveCustomRec(id);
+  if(type==='packaging')return approvePackaging(id);
+  return Promise.resolve();
+}
+async function bulkApproveInbox(){
+  const items=getMyPendingItems();
+  if(!items.length){toast('کارتابل خالیه','warning');return;}
+  const ok=await askConfirm('همه‌ی '+items.length+' مورد کارتابل تایید بشه؟','این کار برای هر مورد جداگانه قابل بازگشت نیست (مثل زدن تایید تک‌تک آن‌ها). قبل از زدن، لیست را یک بار مرور کن.');
+  if(!ok)return;
+  const btn=document.getElementById('inboxApproveAllBtn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ در حال تایید...';}
+  let done=0;
+  for(const it of items){
+    try{await inboxApproveAsync(it.type,it.id);done++;}
+    catch(e){toast('خطا در تایید یک مورد: '+(e?.message||e),'error');}
+  }
+  if(btn){btn.disabled=false;btn.textContent='✅ تایید همه';}
+  toast(done+' از '+items.length+' مورد تایید شد ✓');
+  renderInbox();updateDash();
+}
+let _confirmResolve=null;
+function askConfirm(title,body){
+  document.getElementById('confirmModalTitle').textContent=title;
+  document.getElementById('confirmModalBody').textContent=body||'';
+  document.getElementById('confirmModal').classList.add('open');
+  return new Promise(res=>{_confirmResolve=res;});
+}
+function closeConfirmModal(val){
+  document.getElementById('confirmModal').classList.remove('open');
+  if(_confirmResolve)_confirmResolve(val);
+  _confirmResolve=null;
 }
 
 
