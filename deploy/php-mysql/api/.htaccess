@@ -1,0 +1,11 @@
+# جلوگیری از خواندن مستقیم فایل تنظیمات (شامل رمز دیتابیس)
+<FilesMatch "^(config\.php|config\.sample\.php|policies\.php|lib\.php)$">
+    Require all denied
+</FilesMatch>
+
+# فهرست فایل‌ها نمایش داده نشود
+Options -Indexes
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+</IfModule>
