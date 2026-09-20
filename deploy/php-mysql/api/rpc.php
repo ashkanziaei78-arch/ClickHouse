@@ -34,7 +34,7 @@ function wf_steps(string $module): array {
 }
 
 function fetch_row(string $table, string $id): ?array {
-    $st = db()->prepare("SELECT * FROM `$table` WHERE id = ?");
+    $st = db()->prepare('SELECT * FROM ' . q($table) . ' WHERE id = ?');
     $st->execute([$id]);
     return $st->fetch() ?: null;
 }
@@ -59,7 +59,7 @@ function record_approval(string $module, string $id, int $step, string $action, 
     $u = current_user();
     db()->prepare(
         'INSERT INTO approvals (id, module, record_id, step_order, approver_id, action, note, created_at)
-         VALUES (?,?,?,?,?,?,?,UTC_TIMESTAMP())')
+         VALUES (?,?,?,?,?,?,?,' . now_sql() . ')')
         ->execute([uuid4(), $module, $id, $step, $u['id'] ?? null, $action, $note]);
 }
 
@@ -85,10 +85,10 @@ function do_approve(string $table, string $module, string $id, array $u): array 
     try {
         record_approval($module, $id, $cur, 'approved', null);
         if ($next) {
-            db()->prepare("UPDATE `$table` SET current_step = ?, escalated = 0 WHERE id = ?")
+            db()->prepare('UPDATE ' . q($table) . ' SET current_step = ?, escalated = ' . bool_sql(false) . ' WHERE id = ?')
                 ->execute([(int)$next['step_order'], $id]);
         } else {
-            db()->prepare("UPDATE `$table` SET status = 'approved', current_step = 0 WHERE id = ?")
+            db()->prepare('UPDATE ' . q($table) . " SET status = 'approved', current_step = 0 WHERE id = ?")
                 ->execute([$id]);
         }
         db()->commit();
@@ -112,7 +112,7 @@ function do_reject(string $table, string $module, string $id, ?string $note, arr
     db()->beginTransaction();
     try {
         record_approval($module, $id, (int)($rec['current_step'] ?? 0), 'rejected', $note);
-        db()->prepare("UPDATE `$table` SET status = 'rejected', rejection_note = ? WHERE id = ?")
+        db()->prepare('UPDATE ' . q($table) . " SET status = 'rejected', rejection_note = ? WHERE id = ?")
             ->execute([$note, $id]);
         db()->commit();
     } catch (Throwable $e) {
@@ -135,8 +135,8 @@ function do_resubmit(string $table, string $module, string $id, array $u): array
     $steps = wf_steps($module);
     $first = $steps[0]['step_order'] ?? 0;
     db()->prepare(
-        "UPDATE `$table` SET status = 'submitted', current_step = ?, escalated = 0,
-         rejection_note = NULL WHERE id = ?")
+        'UPDATE ' . q($table) . " SET status = 'submitted', current_step = ?, escalated = "
+        . bool_sql(false) . ', rejection_note = NULL WHERE id = ?')
         ->execute([(int)$first, $id]);
     log_activity('ارسال دوباره سند در ماژول ' . $module, '🔁');
     return ['success' => true];
@@ -181,7 +181,7 @@ case 'reject_custom_record': {
 case 'submit_custom_form': {
     $formId = (string)($params['p_form_id'] ?? '');
     $data   = $params['p_data'] ?? [];
-    $f = db()->prepare('SELECT * FROM custom_forms WHERE id = ? AND active = 1');
+    $f = db()->prepare('SELECT * FROM custom_forms WHERE id = ? AND active = ' . bool_sql(true));
     $f->execute([$formId]);
     $form = $f->fetch();
     if (!$form) json_out(['error' => 'فرم پیدا نشد یا غیرفعال است']);
@@ -193,7 +193,7 @@ case 'submit_custom_form': {
 
     db()->prepare(
         'INSERT INTO custom_form_records (id, form_id, data, status, current_step, submitted_by, created_at, escalated)
-         VALUES (?,?,?,?,?,?,UTC_TIMESTAMP(),0)')
+         VALUES (?,?,?,?,?,?,' . now_sql() . ',' . bool_sql(false) . ')')
         ->execute([$recId, $formId, json_encode($data, JSON_UNESCAPED_UNICODE),
                    $status, (int)$first, $u['id']]);
 
@@ -218,7 +218,7 @@ case 'approve_goods_request_warehouse': {
 
     db()->prepare(
         "UPDATE goods_requests SET status = 'pending_receiver', warehouse_approver_id = ?,
-         warehouse_approved_at = UTC_TIMESTAMP(), escalated = 0 WHERE id = ?")
+         warehouse_approved_at = " . now_sql() . ", escalated = " . bool_sql(false) . " WHERE id = ?")
         ->execute([$u['id'], $id]);
     log_activity('تایید انبار برای درخواست کالا', '✅');
     json_out(['success' => true]);
@@ -245,7 +245,7 @@ case 'confirm_goods_request_receipt': {
         json_out(['error' => 'فقط تحویل‌گیرنده تعیین‌شده می‌تواند تایید کند']);
     }
     db()->prepare("UPDATE goods_requests SET status = 'delivered',
-                   receiver_confirmed_at = UTC_TIMESTAMP() WHERE id = ?")->execute([$id]);
+                   receiver_confirmed_at = " . now_sql() . " WHERE id = ?")->execute([$id]);
     log_activity('تایید دریافت کالا', '📦');
     json_out(['success' => true]);
 }
@@ -257,7 +257,7 @@ case 'acknowledge_letter': {
     if (($rec['recipient_id'] ?? '') !== $u['id']) {
         json_out(['error' => 'فقط مخاطب نامه می‌تواند تایید کند']);
     }
-    db()->prepare("UPDATE letters SET status = 'acknowledged', acknowledged_at = UTC_TIMESTAMP(),
+    db()->prepare("UPDATE letters SET status = 'acknowledged', acknowledged_at = " . now_sql() . ",
                    margin_note = COALESCE(?, margin_note) WHERE id = ?")
         ->execute([$params['p_margin_note'] ?? null, $id]);
     log_activity('تایید دریافت نامه', '✅');
@@ -280,7 +280,7 @@ case 'post_voucher': {
     }
     if ((float)$t['d'] == 0.0) json_out(['error' => 'سند بدون مبلغ است']);
     db()->prepare("UPDATE acc_vouchers SET status = 'posted', posted_by = ?,
-                   posted_at = UTC_TIMESTAMP() WHERE id = ?")->execute([$u['id'], $id]);
+                   posted_at = " . now_sql() . " WHERE id = ?")->execute([$u['id'], $id]);
     log_activity('ثبت سند حسابداری', '📒');
     json_out(['success' => true]);
 }
@@ -342,9 +342,9 @@ case 'run_escalations': {
     $n = 0;
     foreach ($tables as $t => $cond) {
         $st = db()->prepare(
-            "UPDATE `$t` SET escalated = 1
-             WHERE $cond AND escalated = 0
-               AND created_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)");
+            'UPDATE ' . q($t) . ' SET escalated = ' . bool_sql(true) . '
+             WHERE ' . $cond . ' AND escalated = ' . bool_sql(false) . '
+               AND created_at < ' . minus_hours_sql(24));
         $st->execute();
         $n += $st->rowCount();
     }

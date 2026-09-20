@@ -39,7 +39,7 @@ function prep_value(string $type, mixed $v): mixed {
         // (رشته، عدد، آرایه یا شیء) — پس همیشه باید JSON شود.
         return json_encode($v, JSON_UNESCAPED_UNICODE);
     }
-    if ($type === 'tinyint') return $v ? 1 : 0;
+    if ($type === 'bool') return bool_param((bool)$v);
     if ($type === 'datetime') {
         if (is_string($v) && $v !== '') {
             $ts = strtotime($v);
@@ -58,7 +58,7 @@ case 'getAll': {
     $acc = check_access($table, 'SELECT');
     if (!$acc['ok']) json_out(['rows' => []]);   // مثل RLS: بدون دسترسی = خالی
 
-    $sql  = "SELECT * FROM `$table`";
+    $sql  = 'SELECT * FROM ' . q($table);
     $args = [];
     if (!empty($acc['filter'])) {
         $sql .= ' WHERE ' . $acc['filter']['sql'];
@@ -77,8 +77,8 @@ case 'getAll': {
         foreach ($r as $k => $v) {
             if (($cols[$k] ?? '') === 'json' && is_string($v)) {
                 $r[$k] = json_decode($v, true);
-            } elseif (($cols[$k] ?? '') === 'tinyint') {
-                $r[$k] = (bool)$v;
+            } elseif (($cols[$k] ?? '') === 'bool') {
+                $r[$k] = to_bool($v);
             }
         }
         $out[] = row_to_camel($r);
@@ -101,9 +101,17 @@ case 'put': {
     $keyVal   = $row[$keyField] ?? null;
     $isUpdate = false;
     if ($keyVal !== null && $keyVal !== '') {
-        $chk = db()->prepare("SELECT 1 FROM `$table` WHERE `$keyField` = ?");
-        $chk->execute([$keyVal]);
-        $isUpdate = (bool)$chk->fetchColumn();
+        try {
+            $chk = db()->prepare('SELECT 1 FROM ' . q($table) . ' WHERE ' . q($keyField) . ' = ?');
+            $chk->execute([$keyVal]);
+            $isUpdate = (bool)$chk->fetchColumn();
+        } catch (Throwable $e) {
+            // مقدار کلید با نوع ستون سازگار نیست — مثلا کلاینت شناسه‌ای
+            // ساخته که UUID نیست. پستگرس چنین مقایسه‌ای را خطا می‌دهد،
+            // پس آن را «رکورد جدید» در نظر می‌گیریم و پایین‌تر شناسه‌ی
+            // درست ساخته می‌شود.
+            $isUpdate = false;
+        }
     }
 
     $acc = check_access($table, $isUpdate ? 'UPDATE' : 'INSERT');
@@ -122,12 +130,12 @@ case 'put': {
         $args = [];
         foreach ($row as $c => $v) {
             if ($c === $keyField) continue;
-            $sets[] = "`$c` = ?";
+            $sets[] = q($c) . ' = ?';
             $args[] = prep_value($cols[$c], $v);
         }
         if (!$sets) json_out(['row' => $obj]);
 
-        $sql = "UPDATE `$table` SET " . implode(', ', $sets) . " WHERE `$keyField` = ?";
+        $sql = 'UPDATE ' . q($table) . ' SET ' . implode(', ', $sets) . ' WHERE ' . q($keyField) . ' = ?';
         $args[] = $keyVal;
         if (!empty($acc['filter'])) {
             $sql .= ' AND ' . $acc['filter']['sql'];
@@ -138,7 +146,7 @@ case 'put': {
             $st->execute($args);
             if ($st->rowCount() === 0) {
                 // یا چیزی عوض نشده، یا سطر خارج از دسترسی کاربر بوده
-                $own = db()->prepare("SELECT 1 FROM `$table` WHERE `$keyField` = ?"
+                $own = db()->prepare('SELECT 1 FROM ' . q($table) . ' WHERE ' . q($keyField) . ' = ?'
                     . (!empty($acc['filter']) ? ' AND ' . $acc['filter']['sql'] : ''));
                 $own->execute(array_merge([$keyVal], $acc['filter']['args'] ?? []));
                 if (!$own->fetchColumn()) fail('اجازه‌ی ویرایش این رکورد را ندارید', 403);
@@ -164,14 +172,23 @@ case 'put': {
         $args  = [];
         foreach ($names as $c) $args[] = prep_value($cols[$c], $row[$c]);
 
-        $sql = "INSERT INTO `$table` (" . implode(',', array_map(fn($c) => "`$c`", $names))
-             . ") VALUES ($ph)";
-        // برای settings و جدول‌های کلید-مقداری، درج تکراری = به‌روزرسانی
+        $sql = 'INSERT INTO ' . q($table) . ' ('
+             . implode(',', array_map(fn($c) => q($c), $names)) . ") VALUES ($ph)";
+
+        // درج تکراری = به‌روزرسانی (برای settings و جدول‌های کلید-مقداری)
+        // هر دو دیتابیس این را دارند ولی با دستور متفاوت
         $upd = [];
         foreach ($names as $c) {
-            if ($c !== $keyField) $upd[] = "`$c` = VALUES(`$c`)";
+            if ($c === $keyField) continue;
+            $upd[] = is_pg()
+                ? q($c) . ' = EXCLUDED.' . q($c)
+                : q($c) . ' = VALUES(' . q($c) . ')';
         }
-        if ($upd) $sql .= ' ON DUPLICATE KEY UPDATE ' . implode(', ', $upd);
+        if ($upd) {
+            $sql .= is_pg()
+                ? ' ON CONFLICT (' . q($keyField) . ') DO UPDATE SET ' . implode(', ', $upd)
+                : ' ON DUPLICATE KEY UPDATE ' . implode(', ', $upd);
+        }
 
         try {
             db()->prepare($sql)->execute($args);
@@ -192,7 +209,7 @@ case 'del': {
     $acc = check_access($table, 'DELETE');
     if (!$acc['ok']) fail($acc['reason'] ?? 'اجازه‌ی حذف ندارید', 403);
 
-    $sql  = "DELETE FROM `$table` WHERE `$keyField` = ?";
+    $sql  = 'DELETE FROM ' . q($table) . ' WHERE ' . q($keyField) . ' = ?';
     $args = [$id];
     if (!empty($acc['filter'])) {
         $sql .= ' AND ' . $acc['filter']['sql'];
@@ -202,6 +219,9 @@ case 'del': {
         $st = db()->prepare($sql);
         $st->execute($args);
         if ($st->rowCount() === 0) fail('رکورد پیدا نشد یا اجازه‌ی حذفش را ندارید', 403);
+    } catch (PDOException $e) {
+        // شناسه‌ی نامعتبر = رکوردی برای حذف وجود ندارد
+        fail('رکورد پیدا نشد یا اجازه‌ی حذفش را ندارید', 403);
     } catch (Throwable $e) {
         fail_internal("delete $table: " . $e->getMessage());
     }

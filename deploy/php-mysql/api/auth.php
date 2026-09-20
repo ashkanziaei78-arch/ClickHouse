@@ -53,7 +53,7 @@ case 'login': {
         fail($generic, 401);
     }
 
-    if ((int)($row['active'] ?? 1) !== 1) fail('حساب کاربری شما غیرفعال است', 403);
+    if (!to_bool($row['active'] ?? true)) fail('حساب کاربری شما غیرفعال است', 403);
 
     db()->prepare('UPDATE app_users SET failed_tries = 0, locked_until = NULL WHERE id = ?')
         ->execute([$row['id']]);
@@ -61,12 +61,12 @@ case 'login': {
     $token = bin2hex(random_bytes(32));
     db()->prepare(
         'INSERT INTO app_sessions (token, user_id, created_at, expires_at, ip)
-         VALUES (?,?,UTC_TIMESTAMP(),DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND),?)')
+         VALUES (?,?,' . now_sql() . ',' . plus_seconds_sql() . ',?)')
         ->execute([hash('sha256', $token), $row['id'], SESSION_LIFETIME,
                    mb_substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45)]);
 
     // پاک کردن نشست‌های منقضی (نگهداری خودکار)
-    db()->exec('DELETE FROM app_sessions WHERE expires_at < UTC_TIMESTAMP()');
+    db()->exec('DELETE FROM app_sessions WHERE expires_at < ' . now_sql());
 
     $ps = db()->prepare('SELECT * FROM profiles WHERE id = ?');
     $ps->execute([$row['id']]);
@@ -141,18 +141,18 @@ case 'admin_set_active': {
         try {
             db()->prepare(
                 'INSERT INTO app_users (id, username, password_hash, created_at)
-                 VALUES (?,?,?,UTC_TIMESTAMP())')
+                 VALUES (?,?,?,' . now_sql() . ')')
                 ->execute([$id, $username, password_hash($password, PASSWORD_BCRYPT)]);
 
             db()->prepare(
                 'INSERT INTO profiles (id, username, name, role, role_label, is_admin, active, perms, created_at)
-                 VALUES (?,?,?,?,?,?,1,?,UTC_TIMESTAMP())')
+                 VALUES (?,?,?,?,?,?,' . bool_sql(true) . ',?,' . now_sql() . ')')
                 ->execute([
                     $id, $username,
                     (string)($in['name'] ?? $username),
                     (string)($in['role'] ?? ''),
                     (string)($in['roleLabel'] ?? ''),
-                    !empty($in['isAdmin']) ? 1 : 0,
+                    bool_param(!empty($in['isAdmin'])),
                     json_encode((object)($in['perms'] ?? []), JSON_UNESCAPED_UNICODE),
                 ]);
             db()->commit();
@@ -178,9 +178,9 @@ case 'admin_set_active': {
 
     // admin_set_active
     $id     = (string)($in['id'] ?? '');
-    $active = !empty($in['active']) ? 1 : 0;
+    $active = !empty($in['active']);
     if (!is_uuid($id)) fail('شناسه کاربر نامعتبر است');
-    db()->prepare('UPDATE profiles SET active = ? WHERE id = ?')->execute([$active, $id]);
+    db()->prepare('UPDATE profiles SET active = ? WHERE id = ?')->execute([bool_param($active), $id]);
     if (!$active) db()->prepare('DELETE FROM app_sessions WHERE user_id = ?')->execute([$id]);
     log_activity(($active ? 'فعال' : 'غیرفعال') . ' کردن کاربر', '👤');
     json_out(['ok' => true]);

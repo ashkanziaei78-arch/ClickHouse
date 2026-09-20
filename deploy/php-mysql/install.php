@@ -5,37 +5,54 @@
  * این فایل را کنار index.html آپلود کنید و در مرورگر باز کنید:
  *     https://yourdomain.ir/install.php
  *
+ * از هر دو دیتابیس پشتیبانی می‌کند: MySQL/MariaDB و PostgreSQL
+ *
  * ⚠️ بعد از پایان نصب حتما این فایل را پاک کنید.
  */
 declare(strict_types=1);
 mb_internal_encoding('UTF-8');
-session_start();
 
-$API_DIR   = __DIR__ . '/api';
-$CONFIG    = $API_DIR . '/config.php';
-$SCHEMA    = __DIR__ . '/database/mysql_schema.sql';
+$API_DIR = __DIR__ . '/api';
+$CONFIG  = $API_DIR . '/config.php';
+$SCHEMA  = [
+    'mysql' => __DIR__ . '/database/mysql_schema.sql',
+    'pgsql' => __DIR__ . '/database/pgsql_schema.sql',
+];
+
 $installed = file_exists($CONFIG);
-$step      = (int)($_POST['step'] ?? ($installed ? 2 : 1));
 $errors    = [];
+$warnings  = [];
 $done      = false;
+$driver    = ($_POST['driver'] ?? 'mysql') === 'pgsql' ? 'pgsql' : 'mysql';
 
 function e(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
+/** ساخت شناسه‌ی یکتا (UUID v4) */
+function new_uuid(): string {
+    $d = random_bytes(16);
+    $d[6] = chr((ord($d[6]) & 0x0f) | 0x40);
+    $d[8] = chr((ord($d[8]) & 0x3f) | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($d), 4));
+}
+
 // ------------------------------------------------------- بررسی پیش‌نیازها
+$hasMy = extension_loaded('pdo_mysql');
+$hasPg = extension_loaded('pdo_pgsql');
+
 $checks = [
-    'نسخه PHP (حداقل 8.0)'      => version_compare(PHP_VERSION, '8.0.0', '>='),
-    'افزونه PDO MySQL'          => extension_loaded('pdo_mysql'),
-    'افزونه mbstring'           => extension_loaded('mbstring'),
-    'افزونه JSON'               => extension_loaded('json'),
-    'قابلیت نوشتن در پوشه api'  => is_writable($API_DIR) || is_writable(__DIR__),
-    'فایل ساختار دیتابیس'       => file_exists($SCHEMA),
+    'نسخه PHP (حداقل ۸.۰)'                 => version_compare(PHP_VERSION, '8.0.0', '>='),
+    'افزونه mbstring'                      => extension_loaded('mbstring'),
+    'افزونه JSON'                          => extension_loaded('json'),
+    'حداقل یکی از PDO MySQL یا PDO PgSQL'  => ($hasMy || $hasPg),
+    'قابلیت نوشتن فایل تنظیمات'            => is_writable($API_DIR) || is_writable(__DIR__),
+    'فایل ساختار دیتابیس'                  => (file_exists($SCHEMA['mysql']) || file_exists($SCHEMA['pgsql'])),
 ];
 $ready = !in_array(false, $checks, true);
 
 // ------------------------------------------------------------ انجام نصب
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'install') {
     $host = trim((string)($_POST['host'] ?? 'localhost'));
-    $port = (int)($_POST['port'] ?? 3306);
+    $port = (int)($_POST['port'] ?? ($driver === 'pgsql' ? 5432 : 3306));
     $name = trim((string)($_POST['dbname'] ?? ''));
     $user = trim((string)($_POST['dbuser'] ?? ''));
     $pass = (string)($_POST['dbpass'] ?? '');
@@ -43,82 +60,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'install')
     $ap   = (string)($_POST['adminpass'] ?? '');
     $an   = trim((string)($_POST['adminname'] ?? 'مدیر سیستم'));
 
+    $isPg = ($driver === 'pgsql');
+
+    if ($isPg && !$hasPg) $errors[] = 'افزونه pdo_pgsql روی این هاست فعال نیست؛ PostgreSQL قابل استفاده نیست.';
+    if (!$isPg && !$hasMy) $errors[] = 'افزونه pdo_mysql روی این هاست فعال نیست؛ MySQL قابل استفاده نیست.';
+    if (!file_exists($SCHEMA[$driver])) $errors[] = 'فایل ساختار دیتابیس پیدا نشد: database/' . basename($SCHEMA[$driver]);
+
     if ($name === '' || $user === '') $errors[] = 'نام دیتابیس و کاربر دیتابیس الزامی است.';
     if (!preg_match('/^[a-z0-9_.]{3,50}$/', $au)) {
         $errors[] = 'نام کاربری مدیر باید ۳ تا ۵۰ کاراکتر و فقط حروف انگلیسی، عدد، نقطه یا خط زیر باشد.';
     }
     if (mb_strlen($ap) < 8) $errors[] = 'رمز مدیر باید حداقل ۸ کاراکتر باشد.';
 
+    $pdo = null;
     if (!$errors) {
+        $dsn = $isPg
+            ? sprintf('pgsql:host=%s;port=%d;dbname=%s;options=\'--client_encoding=UTF8\'', $host, $port, $name)
+            : sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4', $host, $port, $name);
         try {
-            $pdo = new PDO("mysql:host=$host;port=$port;dbname=$name;charset=utf8mb4",
-                $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+            $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
         } catch (PDOException $ex) {
             $errors[] = 'اتصال به دیتابیس ناموفق بود: ' . $ex->getMessage();
         }
     }
 
-    if (!$errors) {
-        // اجرای فایل ساختار
-        try {
-            $sqlText = file_get_contents($SCHEMA);
-            // حذف کامنت‌های تک‌خطی تا تقسیم دستورات درست انجام شود
-            $sqlText = preg_replace('/^--.*$/m', '', (string)$sqlText);
-            foreach (array_filter(array_map('trim', explode(";\n", $sqlText))) as $stmt) {
-                if ($stmt === '') continue;
+    // ------------------------------------------------ اجرای فایل ساختار
+    if (!$errors && $pdo) {
+        $sqlText = (string)file_get_contents($SCHEMA[$driver]);
+        $sqlText = preg_replace('/^--.*$/m', '', $sqlText);   // حذف کامنت‌ها
+        $stmts   = array_filter(array_map('trim', explode(";\n", (string)$sqlText)));
+
+        foreach ($stmts as $stmt) {
+            if ($stmt === '') continue;
+            try {
                 $pdo->exec($stmt);
+            } catch (PDOException $ex) {
+                // افزونه‌های PostgreSQL روی بعضی هاست‌ها اجازه‌ی نصب ندارند
+                // ولی در نسخه ۱۳ به بعد لازم هم نیستند
+                if (stripos($stmt, 'CREATE EXTENSION') === 0) {
+                    $warnings[] = 'افزونه‌ی دیتابیس نصب نشد (مشکلی ایجاد نمی‌کند): ' . $ex->getMessage();
+                    continue;
+                }
+                $errors[] = 'خطا در ساخت جدول‌ها: ' . $ex->getMessage();
+                break;
             }
-        } catch (PDOException $ex) {
-            $errors[] = 'خطا در ساخت جدول‌ها: ' . $ex->getMessage();
         }
     }
 
-    if (!$errors) {
-        // ساخت کاربر مدیر
+    // ---------------------------------------------------- ساخت کاربر مدیر
+    if (!$errors && $pdo) {
+        $TRUE = $isPg ? 'TRUE' : '1';
         try {
             $chk = $pdo->prepare('SELECT id FROM app_users WHERE username = ?');
             $chk->execute([$au]);
             $uid = $chk->fetchColumn();
 
             if (!$uid) {
-                $d = random_bytes(16);
-                $d[6] = chr((ord($d[6]) & 0x0f) | 0x40);
-                $d[8] = chr((ord($d[8]) & 0x3f) | 0x80);
-                $uid = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($d), 4));
-
+                $uid = new_uuid();
                 $pdo->prepare('INSERT INTO app_users (id,username,password_hash,created_at)
-                               VALUES (?,?,?,NOW())')
+                               VALUES (?,?,?,' . ($isPg ? "(now() at time zone 'utc')" : 'UTC_TIMESTAMP()') . ')')
                     ->execute([$uid, $au, password_hash($ap, PASSWORD_BCRYPT)]);
             } else {
-                $pdo->prepare('UPDATE app_users SET password_hash = ? WHERE id = ?')
+                $pdo->prepare('UPDATE app_users SET password_hash = ?, failed_tries = 0, locked_until = NULL
+                               WHERE id = ?')
                     ->execute([password_hash($ap, PASSWORD_BCRYPT), $uid]);
             }
 
-            $pdo->prepare(
-                'INSERT INTO profiles (id,username,name,role,role_label,is_admin,active,perms,created_at)
-                 VALUES (?,?,?,?,?,1,1,?,NOW())
-                 ON DUPLICATE KEY UPDATE is_admin = 1, active = 1, name = VALUES(name)')
-                ->execute([$uid, $au, $an, 'system_admin', 'مدیرسیستم', '{}']);
+            $sql = 'INSERT INTO profiles (id,username,name,role,role_label,is_admin,active,perms,created_at)'
+                 . " VALUES (?,?,?,?,?,$TRUE,$TRUE,?,"
+                 . ($isPg ? "(now() at time zone 'utc'))" : 'UTC_TIMESTAMP())');
+            $sql .= $isPg
+                ? " ON CONFLICT (id) DO UPDATE SET is_admin = TRUE, active = TRUE,
+                        name = EXCLUDED.name, role = EXCLUDED.role, role_label = EXCLUDED.role_label"
+                : ' ON DUPLICATE KEY UPDATE is_admin = 1, active = 1,
+                        name = VALUES(name), role = VALUES(role), role_label = VALUES(role_label)';
+
+            $pdo->prepare($sql)->execute([$uid, $au, $an, 'system_admin', 'مدیرسیستم', '{}']);
         } catch (PDOException $ex) {
             $errors[] = 'خطا در ساخت کاربر مدیر: ' . $ex->getMessage();
         }
     }
 
+    // ------------------------------------------------- نوشتن فایل تنظیمات
     if (!$errors) {
-        // نوشتن فایل تنظیمات
         $cfg = "<?php\n"
              . "// ساخته‌شده توسط نصاب — " . date('Y-m-d H:i') . "\n"
+             . "// نوع دیتابیس: mysql یا pgsql\n"
+             . "define('DB_DRIVER', " . var_export($driver, true) . ");\n"
              . "define('DB_HOST', " . var_export($host, true) . ");\n"
              . "define('DB_PORT', " . $port . ");\n"
              . "define('DB_NAME', " . var_export($name, true) . ");\n"
              . "define('DB_USER', " . var_export($user, true) . ");\n"
              . "define('DB_PASS', " . var_export($pass, true) . ");\n"
-             . "define('SESSION_LIFETIME', 12 * 60 * 60);\n"
-             . "define('LOGIN_MAX_TRIES', 5);\n"
-             . "define('LOGIN_LOCK_SECONDS', 15 * 60);\n"
-             . "define('MAX_UPLOAD_BYTES', 2 * 1024 * 1024);\n";
+             . "\n"
+             . "define('SESSION_LIFETIME', 12 * 60 * 60);   // مدت اعتبار ورود (ثانیه)\n"
+             . "define('LOGIN_MAX_TRIES', 5);               // تعداد تلاش ناموفق مجاز\n"
+             . "define('LOGIN_LOCK_SECONDS', 15 * 60);      // مدت قفل‌شدن حساب\n"
+             . "define('MAX_UPLOAD_BYTES', 2 * 1024 * 1024);// حداکثر حجم فایل آپلودی\n";
         if (@file_put_contents($CONFIG, $cfg) === false) {
-            $errors[] = 'فایل api/config.php نوشته نشد. دسترسی پوشه را روی ۷۵۵ بگذارید یا فایل را دستی بسازید.';
+            $errors[] = 'فایل api/config.php نوشته نشد. دسترسی پوشه api را روی ۷۵۵ بگذارید یا فایل را دستی بسازید.';
         } else {
             @chmod($CONFIG, 0640);
             $done = true;
@@ -151,19 +191,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'install')
   .ok-box{background:#0d2e1a;border:1px solid #10D970;padding:16px;border-radius:9px;font-size:14px}
   .warn{background:#3a2e14;border:1px solid #FFB020;color:#ffe2ad;padding:12px;
         border-radius:8px;margin-top:16px;font-size:13px}
-  code{background:#1A2234;padding:2px 6px;border-radius:4px;font-size:12px}
+  code{background:#1A2234;padding:2px 6px;border-radius:4px;font-size:12px;direction:ltr;display:inline-block}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   @media(max-width:560px){.grid{grid-template-columns:1fr}}
+  .dbpick{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+  .dbpick label{display:block;margin:0;cursor:pointer;padding:14px;border-radius:10px;
+       border:2px solid #232D44;background:#1A2234;text-align:center;font-size:14px}
+  .dbpick input{display:none}
+  .dbpick input:checked + span{color:#10D970;font-weight:bold}
+  .dbpick label:has(input:checked){border-color:#10D970;background:#12281c}
+  .dbpick small{display:block;color:#9FB0C6;font-size:11px;margin-top:4px}
+  .off{opacity:.45}
 </style>
 </head>
 <body>
 <div class="box">
   <h1>نصب سامانه ERP — پیشگامان صنعت سبز</h1>
-  <div class="sub">نسخه‌ی هاست شخصی (PHP + MySQL)</div>
+  <div class="sub">نسخه‌ی هاست شخصی — MySQL یا PostgreSQL</div>
 
 <?php if ($done): ?>
+  <?php foreach ($warnings as $w): ?>
+    <div class="warn">ℹ️ <?= e($w) ?></div>
+  <?php endforeach; ?>
   <div class="ok-box">
     <b>✅ نصب با موفقیت انجام شد.</b><br><br>
+    نوع دیتابیس: <code><?= e($driver === 'pgsql' ? 'PostgreSQL' : 'MySQL / MariaDB') ?></code><br><br>
     حالا می‌توانید وارد سامانه شوید:<br>
     <a href="index.html" style="color:#10D970">رفتن به سامانه ←</a>
   </div>
@@ -194,21 +246,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'install')
 
   <?php if (!$ready): ?>
     <div class="err">تا وقتی موارد بالا درست نشوند نصب ممکن نیست.
-      معمولا با تغییر نسخه‌ی PHP در پنل هاست حل می‌شود.</div>
+      معمولا با تغییر نسخه‌ی PHP یا فعال‌کردن افزونه در پنل هاست حل می‌شود.</div>
   <?php else: ?>
 
   <form method="post">
     <input type="hidden" name="do" value="install">
 
-    <h3 style="font-size:15px;margin:22px 0 4px">۲) اطلاعات دیتابیس</h3>
+    <h3 style="font-size:15px;margin:22px 0 4px">۲) نوع دیتابیس</h3>
+    <div class="sub" style="margin:0">اگر نمی‌دانید کدام را انتخاب کنید، MySQL را بزنید.</div>
+    <div class="dbpick">
+      <label class="<?= $hasMy ? '' : 'off' ?>">
+        <input type="radio" name="driver" value="mysql" <?= $driver === 'mysql' ? 'checked' : '' ?>
+               <?= $hasMy ? '' : 'disabled' ?> onchange="document.getElementById('port').value='3306'">
+        <span>MySQL / MariaDB</span>
+        <small><?= $hasMy ? 'روی این هاست موجود است' : 'روی این هاست نیست' ?></small>
+      </label>
+      <label class="<?= $hasPg ? '' : 'off' ?>">
+        <input type="radio" name="driver" value="pgsql" <?= $driver === 'pgsql' ? 'checked' : '' ?>
+               <?= $hasPg ? '' : 'disabled' ?> onchange="document.getElementById('port').value='5432'">
+        <span>PostgreSQL</span>
+        <small><?= $hasPg ? 'روی این هاست موجود است' : 'روی این هاست نیست' ?></small>
+      </label>
+    </div>
+
+    <h3 style="font-size:15px;margin:22px 0 4px">۳) اطلاعات دیتابیس</h3>
     <div class="sub" style="margin:0 0 6px">این اطلاعات را از پنل هاست بخش
-      <code>MySQL Databases</code> بردارید.</div>
+      <code>MySQL Databases</code> یا <code>PostgreSQL Databases</code> بردارید.</div>
 
     <div class="grid">
       <div><label>آدرس سرور دیتابیس</label>
         <input name="host" value="<?= e($_POST['host'] ?? 'localhost') ?>"></div>
       <div><label>پورت</label>
-        <input name="port" value="<?= e((string)($_POST['port'] ?? '3306')) ?>"></div>
+        <input id="port" name="port" value="<?= e((string)($_POST['port'] ?? ($driver === 'pgsql' ? '5432' : '3306'))) ?>"></div>
     </div>
     <label>نام دیتابیس</label>
     <input name="dbname" required value="<?= e($_POST['dbname'] ?? '') ?>">
@@ -217,7 +286,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['do'] ?? '') === 'install')
     <label>رمز دیتابیس</label>
     <input name="dbpass" type="password" value="">
 
-    <h3 style="font-size:15px;margin:24px 0 4px">۳) کاربر مدیر سامانه</h3>
+    <h3 style="font-size:15px;margin:24px 0 4px">۴) کاربر مدیر سامانه</h3>
     <div class="sub" style="margin:0 0 6px">با این حساب وارد سامانه می‌شوید.</div>
     <div class="grid">
       <div><label>نام کاربری (انگلیسی)</label>

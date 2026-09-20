@@ -23,8 +23,11 @@ foreach ($watch as $t) {
         $cols = table_columns($t);
         $stampCol = isset($cols['created_at']) ? 'created_at' : null;
         $sql = $stampCol
-            ? "SELECT COUNT(*) c, COALESCE(MAX(`$stampCol`),'') m FROM `$t`"
-            : "SELECT COUNT(*) c, '' m FROM `$t`";
+            ? 'SELECT COUNT(*) AS c, COALESCE(CAST(MAX(' . q($stampCol) . ") AS char(32)),'') AS m FROM " . q($t)
+            : "SELECT COUNT(*) AS c, '' AS m FROM " . q($t);
+        if (is_pg() && $stampCol) {
+            $sql = 'SELECT COUNT(*) AS c, COALESCE(MAX(' . q($stampCol) . ")::text,'') AS m FROM " . q($t);
+        }
         $r = db()->query($sql)->fetch();
         $out[$t] = $r['c'] . ':' . $r['m'];
     } catch (Throwable $e) {
