@@ -257,6 +257,10 @@ input[type=date],input[type=time]{color-scheme:dark;}
 .slicer-menu{display:none;position:absolute;z-index:60;top:calc(100% + 4px);inset-inline-start:0;width:250px;
   background:var(--bg2);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:8px;}
 .slicer-menu.open{display:block;}
+/* کارت‌ها backdrop-filter دارند و هرکدام یک لایه‌ی جدا می‌سازند؛ برای همین
+   منوی کشویی زیر کارت‌های بعدی می‌رفت. وقتی باز می‌شود آن را به body منتقل
+   می‌کنیم و اینجا ثابت و بالای همه‌چیز (ولی زیر مودال‌ها) می‌نشیند. */
+.slicer-menu.floating{position:fixed;z-index:500;top:auto;inset-inline-start:auto;margin:0;}
 .slicer-menu input.sl-search{width:100%;margin-bottom:6px;font-size:12px;padding:7px 9px;}
 .slicer-opts{max-height:210px;overflow-y:auto;}
 .slicer-opt{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:8px;cursor:pointer;font-size:13px;}
@@ -524,7 +528,7 @@ th.sortable.asc .sarrow,th.sortable.desc .sarrow{opacity:1;color:var(--green);}
     <div id="gsearchResults"></div>
   </div>
   <div class="topbar-spacer2"></div>
-  <div class="notif-wrap"><button class="tb-btn" onclick="toggleNotif()">🔔</button><div class="notif-badge" id="notifCount" style="display:none">0</div></div>
+  <div class="notif-wrap"><button class="tb-btn" onclick="toggleNotif(event)">🔔</button><div class="notif-badge" id="notifCount" style="display:none">0</div></div>
   <button class="tb-btn" onclick="toggleTheme()" id="themeBtn" title="تم روشن / تیره">🌙</button>
   <button class="tb-btn" onclick="toggleLang()" id="langBtn">EN</button>
   <div class="user-chip" id="userChip" onclick="showPage('settings')">👤 Admin</div>
@@ -3072,7 +3076,23 @@ function notifClick(page){
 }
 function updateNotifBadge(){const c=document.getElementById('notifCount');if(!c)return;if(notifications.length){c.style.display='flex';c.textContent=notifications.length;}else c.style.display='none';}
 function renderNotifs(){const el=document.getElementById('notifList');if(!el)return;if(!notifications.length){el.innerHTML='<div class="empty">اعلانی نیست</div>';return;}el.innerHTML=notifications.map(n=>`<div class="notif-item" ${n.page?`style="cursor:pointer" onclick="notifClick('${n.page}')"`:''}><div class="notif-dot ${n.color}"></div><div class="notif-text">${n.text}<div class="notif-time">${n.time}</div></div></div>`).join('');}
-function toggleNotif(){const p=document.getElementById('notifPanel');p.style.display=p.style.display==='block'?'none':'block';renderNotifs();}
+function closeNotif(){const p=document.getElementById('notifPanel');if(p)p.style.display='none';}
+function toggleNotif(e){
+  if(e)e.stopPropagation();
+  const p=document.getElementById('notifPanel');if(!p)return;
+  const open=p.style.display==='block';
+  p.style.display=open?'none':'block';
+  if(!open)renderNotifs();
+}
+// بستن پنل اعلان با کلیک بیرون از آن یا کلید Esc
+// (قبلا فقط با زدن دوباره‌ی خود زنگوله بسته می‌شد)
+document.addEventListener('click',function(e){
+  const p=document.getElementById('notifPanel');
+  if(!p||p.style.display!=='block')return;
+  if(e.target.closest('#notifPanel')||e.target.closest('.notif-wrap'))return;
+  closeNotif();
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeNotif();});
 function clearNotifs(){notifications=[];updateNotifBadge();renderNotifs();}
 
 // ============================================================
@@ -4002,11 +4022,31 @@ function weekStartOf(dateStr){
   d.setDate(d.getDate()-offset);
   return d.toISOString().slice(0,10);
 }
+// گروه‌بندی ماه و سال بر اساس تقویم شمسی انجام می‌شود، نه میلادی.
+// (قبلا کلید میلادی بود و برچسب نمودار هم میلادی نشان داده می‌شد،
+//  در حالی که بقیه‌ی تاریخ‌های سامانه شمسی است. یک ماه شمسی روی دو ماه
+//  میلادی می‌افتد، پس گروه‌بندی میلادی عددها را هم اشتباه می‌کرد.)
 function dateKeyForGranularity(dateStr,g){
-  if(g==='year')return String(new Date(dateStr+'T00:00:00').getFullYear());
-  if(g==='month'){const d=new Date(dateStr+'T00:00:00');return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+  if(g==='year'||g==='month'){
+    const parts=String(dateStr).slice(0,10).split('-').map(Number);
+    if(parts.length<3||!parts[0])return '';
+    const [jy,jm]=gregorianToJalali(parts[0],parts[1],parts[2]);
+    return g==='year'?String(jy):jy+'-'+String(jm).padStart(2,'0');
+  }
   if(g==='week')return weekStartOf(dateStr);
   return dateStr; // day: همون تاریخ کامل
+}
+// اولین و آخرین روز یک سال شمسی، به میلادی
+function jYearRangeIso(jy){
+  const a=jalaliToGregorian(jy,1,1), b=jalaliToGregorian(jy,12,jDaysInMonth(jy,12));
+  const f=t=>`${t[0]}-${String(t[1]).padStart(2,'0')}-${String(t[2]).padStart(2,'0')}`;
+  return [f(a),f(b)];
+}
+// اولین و آخرین روز یک ماه شمسی، به میلادی
+function jMonthRangeIso(jy,jm){
+  const a=jalaliToGregorian(jy,jm,1), b=jalaliToGregorian(jy,jm,jDaysInMonth(jy,jm));
+  const f=t=>`${t[0]}-${String(t[1]).padStart(2,'0')}-${String(t[2]).padStart(2,'0')}`;
+  return [f(a),f(b)];
 }
 function dashFilterRange(){
   return {from:document.getElementById('dash-filter-from')?.value||'',to:document.getElementById('dash-filter-to')?.value||''};
@@ -4030,20 +4070,74 @@ function toggleSlicerVal(k,v,on){
 }
 function slicerSelectAll(k,vals){dashSlicers[k]=vals.map(String);updateDash();}
 function slicerClearOne(k){dashSlicers[k]=[];updateDash();}
-function toggleSlicerMenu(k){
-  const m=document.getElementById('slmenu_'+k);if(!m)return;
-  const wasOpen=m.classList.contains('open');
+// کدام اسلایسر باز است (برای باز نگه داشتنش بعد از رفرش نوار فیلترها)
+let _openSlicerKey=null, _openSlicerSearch='';
+function placeSlicerMenu(m,btn){
+  const r=btn.getBoundingClientRect();
+  const w=Math.max(r.width,250);
+  const rtl=(document.documentElement.getAttribute('dir')||'rtl')==='rtl';
+  m.style.width=w+'px';
+  // اگر پایین صفحه جا نبود، بالای دکمه باز شود
+  const below=window.innerHeight-r.bottom;
+  const h=m.offsetHeight||300;
+  m.style.top=(below<h+12&&r.top>h+12?Math.max(8,r.top-h-4):r.bottom+4)+'px';
+  let left=rtl?(r.right-w):r.left;
+  left=Math.min(Math.max(8,left),window.innerWidth-w-8);
+  m.style.left=left+'px';
+  m.style.right='auto';
+}
+function closeAllSlicerMenus(){
+  document.querySelectorAll('.slicer-menu.floating').forEach(m=>{
+    m.classList.remove('open','floating');
+    m.style.cssText='';
+    const home=document.getElementById(m.dataset.slicerHome||'');
+    if(home)home.appendChild(m); else m.remove();
+    m.removeAttribute('data-slicer-home');
+  });
   document.querySelectorAll('.slicer-menu.open').forEach(x=>x.classList.remove('open'));
-  if(!wasOpen){m.classList.add('open');const s=m.querySelector('.sl-search');if(s)setTimeout(()=>s.focus(),20);}
+  _openSlicerKey=null;
+}
+function openSlicerMenu(k,keepSearch){
+  const m=document.getElementById('slmenu_'+k);if(!m)return;
+  const wrap=m.closest('.slicer');const btn=wrap&&wrap.querySelector('.slicer-btn');
+  if(!btn)return;
+  if(!wrap.id)wrap.id='slwrap_'+k;
+  m.dataset.slicerHome=wrap.id;
+  document.body.appendChild(m);
+  m.classList.add('open','floating');
+  placeSlicerMenu(m,btn);
+  _openSlicerKey=k;
+  const s=m.querySelector('.sl-search');
+  if(s){
+    if(keepSearch&&_openSlicerSearch){s.value=_openSlicerSearch;filterSlicerMenu(k,s.value);}
+    setTimeout(()=>{try{s.focus();s.setSelectionRange(s.value.length,s.value.length);}catch(e){}},20);
+  }
+}
+function toggleSlicerMenu(k){
+  const wasOpen=_openSlicerKey===k;
+  _openSlicerSearch='';
+  closeAllSlicerMenus();
+  if(!wasOpen)openSlicerMenu(k,false);
 }
 function filterSlicerMenu(k,q){
   q=(q||'').trim().toLowerCase();
+  _openSlicerSearch=q;
   document.querySelectorAll('#slmenu_'+k+' .slicer-opt').forEach(el=>{
     el.style.display=(!q||(el.dataset.l||'').toLowerCase().indexOf(q)>=0)?'':'none';});
 }
 document.addEventListener('click',function(e){
-  if(!e.target.closest('.slicer'))document.querySelectorAll('.slicer-menu.open').forEach(x=>x.classList.remove('open'));
+  if(e.target.closest('.slicer')||e.target.closest('.slicer-menu'))return;
+  closeAllSlicerMenus();
 });
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeAllSlicerMenus();});
+window.addEventListener('resize',closeAllSlicerMenus);
+window.addEventListener('scroll',function(){
+  if(!_openSlicerKey)return;
+  const m=document.getElementById('slmenu_'+_openSlicerKey);
+  const home=m&&document.getElementById(m.dataset.slicerHome||'');
+  const btn=home&&home.querySelector('.slicer-btn');
+  if(m&&btn)placeSlicerMenu(m,btn); else closeAllSlicerMenus();
+},true);
 function clearDashFilter(){
   ['dash-filter-from-j','dash-filter-from','dash-filter-to-j','dash-filter-to'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   Object.keys(dashSlicers).forEach(k=>dashSlicers[k]=[]);
@@ -4211,7 +4305,12 @@ function renderDashSlicerBar(){
     if(pkShift.length)S.push(slicerSelect('shift','شیفت',pkShift,'🕑',slicerCounts(packReports,'shift')));
     S.push(slicerSelect('docStatus','وضعیت سند',DOC_STATUS_OPTS,'📌',slicerCounts(packReports,'status')));
   }
+  // منوی بازشده در body است؛ قبل از بازسازی نوار آن را برگردان تا id تکراری نشود
+  const reopen=_openSlicerKey;
+  closeAllSlicerMenus();
   el.innerHTML=S.join('')||'<div style="font-size:12px;color:var(--text3);padding:4px">برای این بخش اسلایسر اضافه‌ای وجود ندارد</div>';
+  // با هر تیک زدن، نوار دوباره ساخته می‌شود؛ منو را همان‌جا که بود باز نگه می‌داریم
+  if(reopen&&document.getElementById('slmenu_'+reopen))openSlicerMenu(reopen,true);
   // active chips
   const chips=document.getElementById('dashActiveChips');
   if(chips){
@@ -4264,6 +4363,7 @@ function groupReportsBy(g,field){
   const filtered=applyDashFilter(dailyReports,'date');
   [...filtered].sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(r=>{
     const k=dateKeyForGranularity(r.date,g);
+    if(!k)return;                 // تاریخ خراب را وارد نمودار نکن
     map[k]=(map[k]||0)+(r[field]||0);
   });
   return map;
@@ -4395,6 +4495,11 @@ function stopsDrillRows(list){
 const STOPS_DRILL_HEADERS=['تاریخ','شیفت','خط','نوع','مدت (دقیقه)','علت'];
 function labelForKey(k,g){
   if(g==='day'||g==='week')return isoToJalaliStr(k);
+  if(g==='year')return k;                       // سال شمسی، مثلا ۱۴۰۵
+  if(g==='month'){                              // مثلا «شهریور ۱۴۰۵»
+    const [y,m]=String(k).split('-').map(Number);
+    return (JMONTHS[m-1]||m)+' '+y;
+  }
   return k;
 }
 function renderDashCharts(){
@@ -4413,8 +4518,8 @@ function renderDashCharts(){
           document.getElementById('dash-filter-from').value=from;document.getElementById('dash-filter-to').value=to;
           document.getElementById('dash-filter-from-j').value=isoToJalaliStr(from);document.getElementById('dash-filter-to-j').value=isoToJalaliStr(to);
         };
-        if(dashGranularity==='year'){setRange(k+'-01-01',k+'-12-31');setDashGranularity('month');return;}
-        if(dashGranularity==='month'){const[y,m]=k.split('-').map(Number);const last=new Date(y,m,0).getDate();setRange(k+'-01',k+'-'+String(last).padStart(2,'0'));setDashGranularity('day');return;}
+        if(dashGranularity==='year'){const[f,t]=jYearRangeIso(Number(k));setRange(f,t);setDashGranularity('month');return;}
+        if(dashGranularity==='month'){const[y,m]=k.split('-').map(Number);const[f,t]=jMonthRangeIso(y,m);setRange(f,t);setDashGranularity('day');return;}
         // day / week → لیست رکوردها
         let list=applyDashFilter(dailyReports,'date');
         if(dashGranularity==='day')list=list.filter(r=>r.date===k);
@@ -4497,6 +4602,7 @@ function renderDashCharts(){
     const f=formulas.find(x=>x.id===r.formulaId);
     if(!f||!f.materials)return;
     const k=dateKeyForGranularity(r.date,dashGranularity);
+    if(!k)return;
     allKeys.add(k);
     f.materials.forEach(m=>{
       const qty=(r.production||0)*(m.ratio||0)/100;
@@ -4510,7 +4616,7 @@ function renderDashCharts(){
   if(!matNames.length){
     upsertChart('chartRawConsumption',{type:'bar',data:{labels:[],datasets:[]},options:{responsive:true,maintainAspectRatio:false}});
   }else{
-    upsertChart('chartRawConsumption',{type:'bar',data:{labels:consLabels,datasets:matNames.map((n,i)=>({label:n,data:consLabels.map(k=>Math.round((consByMat[n][k]||0)*100)/100),backgroundColor:palette[i%palette.length]}))},options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true}}}});
+    upsertChart('chartRawConsumption',{type:'bar',data:{labels:consLabels.map(k=>labelForKey(k,dashGranularity)),datasets:matNames.map((n,i)=>({label:n,data:consLabels.map(k=>Math.round((consByMat[n][k]||0)*100)/100),backgroundColor:palette[i%palette.length]}))},options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true}}}});
   }
 
   // ۶. روند BOM از ابتدای سال + قیمت فعلی
@@ -5172,8 +5278,22 @@ function renderInbox(){
   const allBtn=document.getElementById('inboxApproveAllBtn');
   if(allBtn)allBtn.style.display=items.length?'inline-flex':'none';
 }
+// تایید گروهی — مستقیم RPC همان مورد را می‌زند و برخلاف دکمه‌ی تکی،
+// بعد از هر مورد کل داده‌ها را دوباره نمی‌خواند. قبلا هر تایید یک
+// loadAllData کامل (حدود ۴۵ درخواست) پشت سرش داشت، برای همین
+// تایید گروهی خیلی طول می‌کشید. حالا فقط یک بار در پایان می‌خوانیم.
+const INBOX_RPC={
+  daily:    id=>['approve_daily_report',{p_id:id,p_note:null}],
+  sheeter:  id=>['approve_sheeter_report',{p_id:id}],
+  gr_wh:    id=>['approve_goods_request_warehouse',{p_id:id}],
+  gr_recv:  id=>['confirm_goods_request_receipt',{p_id:id}],
+  letter:   id=>['acknowledge_letter',{p_id:id,p_margin_note:null}],
+  hrleave:  id=>['approve_hr_leave',{p_id:id}],
+  custom:   id=>['approve_custom_record',{p_id:id}],
+  packaging:id=>['approve_packaging_report',{p_id:id,p_note:null}],
+};
 // نسخه‌ی async از dispatcher تایید — برخلاف inboxApprove، Promise واقعی هر تایید را
-// برمی‌گرداند تا در تایید گروهی بشود منتظر هرکدام ماند و ردیف بعدی را بعد از تمام شدنش زد
+// برمی‌گرداند تا بشود منتظر هرکدام ماند و ردیف بعدی را بعد از تمام شدنش زد
 function inboxApproveAsync(type,id){
   if(type==='daily')return approveDaily(id);
   if(type==='sheeter')return approveSheeter(id);
@@ -5191,15 +5311,38 @@ async function bulkApproveInbox(){
   const ok=await askConfirm('همه‌ی '+items.length+' مورد کارتابل تایید بشه؟','این کار برای هر مورد جداگانه قابل بازگشت نیست (مثل زدن تایید تک‌تک آن‌ها). قبل از زدن، لیست را یک بار مرور کن.');
   if(!ok)return;
   const btn=document.getElementById('inboxApproveAllBtn');
-  if(btn){btn.disabled=true;btn.textContent='⏳ در حال تایید...';}
-  let done=0;
-  for(const it of items){
-    try{await inboxApproveAsync(it.type,it.id);done++;}
-    catch(e){toast('خطا در تایید یک مورد: '+(e?.message||e),'error');}
+  const setBtn=t=>{if(btn)btn.textContent=t;};
+  if(btn)btn.disabled=true;
+  beginLongOp();            // تا کار تمام نشده، خروج خودکار اتفاق نیفتد
+  let done=0;const fails=[];
+  try{
+    for(let i=0;i<items.length;i++){
+      const it=items[i];
+      setBtn('⏳ '+(i+1)+' از '+items.length+'…');
+      const spec=INBOX_RPC[it.type];
+      if(!spec){fails.push(it.title+' (نوع ناشناخته)');continue;}
+      const [fn,params]=spec(it.id);
+      try{
+        const {data,error}=await sb.rpc(fn,params);
+        if(error)fails.push(it.title+' — '+error.message);
+        else if(data&&data.error)fails.push(it.title+' — '+data.error);
+        else done++;
+      }catch(e){fails.push(it.title+' — '+(e?.message||e));}
+    }
+  }finally{
+    endLongOp();
+    if(btn){btn.disabled=false;btn.textContent='✅ تایید همه';}
   }
-  if(btn){btn.disabled=false;btn.textContent='✅ تایید همه';}
-  toast(done+' از '+items.length+' مورد تایید شد ✓');
-  renderInbox();updateDash();
+  if(done)logActivity('تایید گروهی کارتابل: '+done+' مورد','✅');
+  await loadAllData();      // فقط یک بار، بعد از تمام شدن همه
+  renderInbox();updateInboxBadge();updateDash();
+  if(fails.length){
+    toast(done+' مورد تایید شد، '+fails.length+' مورد نشد','warning');
+    console.warn('موارد تاییدنشده:',fails);
+    showDrillModal('موارد تاییدنشده ('+fails.length+')',['مورد / دلیل'],fails.map(f=>[f]));
+  }else{
+    toast('هر '+done+' مورد تایید شد ✓');
+  }
 }
 let _confirmResolve=null;
 function askConfirm(title,body){
@@ -6479,19 +6622,27 @@ async function downloadNightlyBackup(name){
   setTimeout(()=>URL.revokeObjectURL(url),5000);
 }
 // ============================================================
-// IDLE AUTO-LOGOUT (15 min, warning at 14)
+// IDLE AUTO-LOGOUT
+// برای عوض کردن مدت، فقط همین دو عدد را تغییر بده (بر حسب دقیقه).
 // ============================================================
-const IDLE_LIMIT_MS=15*60*1000, IDLE_WARN_MS=14*60*1000;
+const IDLE_LIMIT_MIN=45;                       // بعد از این مدت بی‌کاری خروج خودکار
+const IDLE_LIMIT_MS=IDLE_LIMIT_MIN*60*1000, IDLE_WARN_MS=(IDLE_LIMIT_MIN-2)*60*1000;
 let idleTimer=null, idleWarnTimer=null, idleLastReset=0;
+// شمارنده‌ی کارهای طولانی (مثل تایید گروهی). تا وقتی بزرگ‌تر از صفر است
+// خروج خودکار انجام نمی‌شود، چون کاربر منتظر است و ماوس تکان نمی‌دهد.
+let _longOps=0;
+function beginLongOp(){_longOps++;idleLastReset=0;resetIdleTimer();}
+function endLongOp(){_longOps=Math.max(0,_longOps-1);idleLastReset=0;resetIdleTimer();}
 function resetIdleTimer(){
   if(!currentUser)return;
   const now=Date.now();
   if(now-idleLastReset<5000)return; // throttle
   idleLastReset=now;
   clearTimeout(idleTimer);clearTimeout(idleWarnTimer);
-  idleWarnTimer=setTimeout(()=>{if(currentUser)toast('به‌خاطر عدم فعالیت، تا ۱ دقیقه دیگر به‌صورت خودکار خارج می‌شوید','warning');},IDLE_WARN_MS);
+  idleWarnTimer=setTimeout(()=>{if(currentUser&&!_longOps)toast('به‌خاطر عدم فعالیت، تا ۲ دقیقه دیگر به‌صورت خودکار خارج می‌شوید','warning');},IDLE_WARN_MS);
   idleTimer=setTimeout(async()=>{
     if(!currentUser)return;
+    if(_longOps){idleLastReset=0;resetIdleTimer();return;} // کاری در جریان است؛ صبر کن
     logActivity('خروج خودکار به‌دلیل عدم فعالیت','⏻');
     toast('به‌دلیل عدم فعالیت از سیستم خارج شدید','warning');
     await doLogout();
