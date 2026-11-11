@@ -2645,6 +2645,25 @@ async function loadAllData(){topLoader(true);try{
 function getWorkflowSteps(module){
   return workflowTemplates.filter(t=>t.module===module).sort((a,b)=>a.stepOrder-b.stepOrder);
 }
+// ============================================================
+// فرم‌های تولیدی که خودِ مدیر سیستم وارد می‌کند نیازی به تایید ندارند
+// و مستقیم با وضعیت «تایید نهایی» ثبت می‌شوند؛ برای بقیه‌ی کاربران
+// گردش کار مثل قبل اجرا می‌شود.
+// برای برگرداندن حالت قبل، کافی است این آرایه را خالی کنید: []
+// ============================================================
+const ADMIN_SKIP_APPROVAL_MODULES=['daily_reports','sheeter_reports','packaging'];
+function adminSkipsApproval(module){
+  return !!(currentUser&&currentUser.isAdmin&&ADMIN_SKIP_APPROVAL_MODULES.includes(module));
+}
+// وضعیت اولیه‌ی یک سند تازه در گردش کار
+function wfInitialState(module){
+  const steps=getWorkflowSteps(module);
+  const skip=!steps.length||adminSkipsApproval(module);
+  return {status:skip?'approved':'submitted',
+          currentStep:skip?0:steps[0].stepOrder,
+          submittedBy:currentUser?.id||null,
+          rejectionNote:null};
+}
 function roleLabel(role){
   const map={ceo:'مدیرعامل',production_manager:'مدیرتولید',sales_manager:'مدیرفروش',system_admin:'مدیرسیستم',production_planning:'برنامه‌ریزی تولید',commercial:'بازرگانی',finance:'مالی',warehouse_keeper:'انباردار'};
   const custom=(typeof orgRoles!=='undefined'&&Array.isArray(orgRoles))?orgRoles.find(r=>r.roleKey===role):null;
@@ -4945,15 +4964,16 @@ async function submitDrBatch(){
   const steps=getWorkflowSteps('daily_reports');
   let n=0;
   for(const v of drBatchQueue){
-    const r={id:Date.now().toString()+Math.random().toString(36).slice(2,6),...v,createdAt:new Date().toISOString(),status:steps.length?'submitted':'approved',currentStep:steps.length?steps[0].stepOrder:0,submittedBy:currentUser?.id||null,rejectionNote:null};
+    const r={id:Date.now().toString()+Math.random().toString(36).slice(2,6),...v,createdAt:new Date().toISOString(),...wfInitialState('daily_reports')};
     try{await DataService.put('dailyReports',r);}catch(e){toast('خطا در ذخیره شیفت '+(n+1),'error');break;}
     dailyReports.push(r);n++;
   }
   if(!n)return;
   drBatchQueue.splice(0,n);
-  logActivity('گزارش تولید ارسال شد ('+n+' شیفت)','📈');
+  const needsOk=steps.length&&!adminSkipsApproval('daily_reports');
+  logActivity(needsOk?('گزارش تولید ارسال شد ('+n+' شیفت)'):('گزارش تولید ثبت و تایید شد ('+n+' شیفت)'),'📈');
   addNotif('گزارش تولید ('+n+' شیفت) برای تایید ارسال شد','green','daily');
-  toast(steps.length?(n+' شیفت ثبت و برای تایید ارسال شد ✓'):(n+' شیفت ذخیره شد'));
+  toast(needsOk?(n+' شیفت ثبت و برای تایید ارسال شد ✓'):(n+' شیفت ثبت شد ✓'));
   renderDrBatchBar();renderDailyReports();updateDash();
 }
 async function saveDailyReport(){
@@ -4979,12 +4999,13 @@ async function saveDailyReport(){
   }
 
   const steps=getWorkflowSteps('daily_reports');
-  const r={id:Date.now().toString(),...fieldVals,createdAt:new Date().toISOString(),status:steps.length?'submitted':'approved',currentStep:steps.length?steps[0].stepOrder:0,submittedBy:currentUser?.id||null,rejectionNote:null};
+  const r={id:Date.now().toString(),...fieldVals,createdAt:new Date().toISOString(),...wfInitialState('daily_reports')};
   try{await DataService.put('dailyReports',r);}catch(e){return;}
   dailyReports.push(r);
-  logActivity('گزارش تولید ارسال شد برای تایید: '+r.production+' kg','📈');
-  addNotif(`گزارش تولید ${isoToJalaliStr(date)} ارسال شد برای تایید`,'green','daily');
-  toast(steps.length?'ثبت شد و برای تایید ارسال شد':'ذخیره شد');
+  const needsOk=steps.length&&!adminSkipsApproval('daily_reports');
+  logActivity((needsOk?'گزارش تولید ارسال شد برای تایید: ':'گزارش تولید ثبت و تایید شد: ')+r.production+' kg','📈');
+  if(needsOk)addNotif(`گزارش تولید ${isoToJalaliStr(date)} ارسال شد برای تایید`,'green','daily');
+  toast(needsOk?'ثبت شد و برای تایید ارسال شد':'ثبت شد ✓');
   renderDailyReports();updateDash();
   drClearRowInputs();
 }
@@ -5039,13 +5060,14 @@ async function submitPackaging(){
   const steps=getWorkflowSteps('packaging');
   let n=0;
   for(const it of rows){
-    const r={id:Date.now().toString()+Math.random().toString(36).slice(2,6),reportDate:date,shift,thickness:it.thickness||null,palletWeight:parseFloat(it.palletWeight)||0,palletSerial:it.palletSerial||null,netWeight:parseFloat(it.netWeight)||0,dimensions:it.dimensions||null,qcPowder:it.qcPowder||'بدون',qcSpot:it.qcSpot||'بدون',qcWave:it.qcWave||'بدون',note:it.note||null,createdAt:new Date().toISOString(),status:steps.length?'submitted':'approved',currentStep:steps.length?steps[0].stepOrder:0,submittedBy:currentUser?.id||null,rejectionNote:null};
+    const r={id:Date.now().toString()+Math.random().toString(36).slice(2,6),reportDate:date,shift,thickness:it.thickness||null,palletWeight:parseFloat(it.palletWeight)||0,palletSerial:it.palletSerial||null,netWeight:parseFloat(it.netWeight)||0,dimensions:it.dimensions||null,qcPowder:it.qcPowder||'بدون',qcSpot:it.qcSpot||'بدون',qcWave:it.qcWave||'بدون',note:it.note||null,createdAt:new Date().toISOString(),...wfInitialState('packaging')};
     try{await DataService.put('packReports',r);}catch(e){toast('خطا در ذخیره یک ردیف','error');return;}
     packReports.push(r);n++;
   }
-  logActivity('گزارش بسته‌بندی ارسال شد ('+n+' پالت) — '+isoToJalaliStr(date),'📦');
+  const needsOk=steps.length&&!adminSkipsApproval('packaging');
+  logActivity((needsOk?'گزارش بسته‌بندی ارسال شد (':'گزارش بسته‌بندی ثبت و تایید شد (')+n+' پالت) — '+isoToJalaliStr(date),'📦');
   addNotif('گزارش بسته‌بندی '+isoToJalaliStr(date)+' ('+n+' پالت) برای برنامه‌ریزی تولید ارسال شد','green','packreport');
-  toast(steps.length?(n+' پالت ثبت و برای برنامه‌ریزی تولید ارسال شد ✓'):(n+' پالت ثبت شد'));
+  toast(needsOk?(n+' پالت ثبت و برای برنامه‌ریزی تولید ارسال شد ✓'):(n+' پالت ثبت شد ✓'));
   pkItems=[];addPkRow();renderPackagingReports();
 }
 function pkStatusBadge(r){
@@ -6089,11 +6111,12 @@ async function saveSheeterReport(){
     editingSheeterId=null;
   }
   const steps=getWorkflowSteps('sheeter_reports');
-  const r={id:Date.now().toString(),...fieldVals,createdAt:new Date().toISOString(),status:steps.length?'submitted':'approved',currentStep:steps.length?steps[0].stepOrder:0,submittedBy:currentUser?.id||null,rejectionNote:null};
+  const r={id:Date.now().toString(),...fieldVals,createdAt:new Date().toISOString(),...wfInitialState('sheeter_reports')};
   try{await DataService.put('sheeterReports',r);}catch(e){return;}
   sheeterReports.push(r);
+  const needsOk=steps.length&&!adminSkipsApproval('sheeter_reports');
   logActivity('گزارش شیتر ثبت شد','✂️');
-  toast(steps.length?'ثبت شد و برای تایید ارسال شد':'ذخیره شد');
+  toast(needsOk?'ثبت شد و برای تایید ارسال شد':'ثبت شد ✓');
   resetIds.forEach(id=>document.getElementById(id).value='');
   renderSheeterReports();
 }
@@ -7379,7 +7402,7 @@ function impFindEmp(code,nid){
 }
 // cols: [header, type(text|num|int|date|time), required, example]
 function getImportConfigs(){
-  const wfDefaults=module=>{const steps=getWorkflowSteps(module);return {createdAt:new Date().toISOString(),status:steps.length?'submitted':'approved',currentStep:steps.length?steps[0].stepOrder:0,submittedBy:currentUser?.id||null,rejectionNote:null};};
+  const wfDefaults=module=>({createdAt:new Date().toISOString(),...wfInitialState(module)});
   const cfgs=[
     {key:'dailyReports',page:'daily',label:'📈 گزارش تولید روزانه',
       cols:[['تاریخ','date',1,'1404/05/01'],['شیفت','text',0,'صبح'],['خط','text',0,'خط ۱'],['تولید kg','num',0,'1200'],['ضایعات kg','num',0,'30'],['اپراتور','text',0,'علی رضایی'],['توضیحات','text',0,'']],
